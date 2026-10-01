@@ -1,0 +1,68 @@
+{
+  "phase": "phase-1-local-office-artifact-runtime",
+  "spec_version": "V0.1",
+  "recorded_at": "2026-10-01",
+  "environment": {
+    "python": "3.12.3",
+    "platform": "Windows 10 x64",
+    "libraries": {
+      "python-docx": "1.2.0",
+      "pdfplumber": "0.11.9",
+      "openpyxl": "3.1.5",
+      "python-pptx": "1.0.2",
+      "fpdf2": "fixtures 生成用"
+    }
+  },
+  "parser_eval": {
+    "fixtures_total": 6,
+    "fixtures_passed": 6,
+    "success_rate": 1.0,
+    "cases": {
+      "TC-DOCX-01": "pass（标准/复杂 DOCX：三级标题顺序与 level、段落/列表计数、表格 cells、block 顺序、图片引用）",
+      "TC-PDF-01": "pass（page 数、page attribution、文本顺序、中文文本层提取）",
+      "TC-XLSX-01": "pass（sheet 数/名、value、formula、merged cells、used range）",
+      "TC-PPTX-01": "pass（slide 数、title、textbox、table、slide attribution）"
+    }
+  },
+  "discovery_eval": {
+    "supported_files": 6,
+    "discovered": 6,
+    "discovery_rate": 1.0,
+    "temp_and_hidden_files_ignored": true,
+    "workspace_boundary_enforced": true
+  },
+  "context_fact_checks": {
+    "xlsx_standard: 2025年营业收入是多少？": "pass（营业收入/1500 在 Context 中）",
+    "docx_standard: 审批流程由谁负责？": "pass（2.2 审批流程/运营部 在 Context 中）",
+    "pptx_standard: 第 3 页提出了哪三个问题？": "pass（[Slide 3]/问题一/二/三 在 Context 中）",
+    "pdf_standard: 报告对主要风险的结论是什么？": "pass（流动性/久期 在 Context 中）"
+  },
+  "llm_qa_eval": {
+    "status": "not_run",
+    "reason": "未配置 HMBUDDY_LLM_BASE_URL / HMBUDDY_LLM_MODEL",
+    "how_to_run": "配置环境变量后执行 pytest evals/test_llm_qa.py -k test_llm_answers"
+  },
+  "error_handling_checks": {
+    "ER-01 不支持格式": "pass（UnsupportedArtifactTypeError）",
+    "ER-02 文件损坏": "pass（ArtifactParseError，含 adapter 与 cause）",
+    "ER-03 加密/OLE 魔数": "pass（EncryptedArtifactError）",
+    "ER-04 超大文件": "pass（ArtifactTooLargeError，阈值默认 50MB 可配置）",
+    "ER-05 Workspace 越界": "pass（WorkspaceBoundaryError）"
+  },
+  "test_run": {
+    "command": "python -m pytest -q",
+    "passed": 83,
+    "skipped": 4,
+    "failed": 0,
+    "skipped_reason": "真实 LLM 问答 Eval 需配置 LLM 环境变量"
+  },
+  "known_limitations": [
+    "XLSX：openpyxl 生成的公式没有 Excel 计算缓存，公式单元格 value 为 None；真实 Excel 保存过的文件会同时拿到缓存值",
+    "PDF：文本块为行级（line-level），非段落级；同页表格渲染在文本之后按纵向位置插入；扫描件只标记 requires_ocr=true，不做 OCR",
+    "PPTX：不解析组合形状之外的图表/SmartArt；标题占位符会同时作为 textbox 出现一次",
+    "DOCX：嵌套表格内的表格按 body 顶层顺序处理；样式名匹配支持 Heading N/标题 N 与 outlineLvl",
+    "Artifact ID 基于文件绝对路径：文件移动/重命名后 ID 会变",
+    "fixture 中的 PDF 由 fpdf2 生成（reportlab 的 TTF 子集化对 CJK 写出的 ToUnicode 有缺陷，实际观察到的失败）",
+    "Workspace 扫描不跟随符号链接循环保护（Phase 1 未处理）"
+  ]
+}

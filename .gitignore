@@ -1,0 +1,43 @@
+# 通用忽略规则（按需增删）
+
+# 操作系统
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# 编辑器 / IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# 日志与临时文件
+*.log
+logs/
+tmp/
+temp/
+
+# 环境变量 / 密钥（切勿提交）
+.env
+.env.*
+*.pem
+*.key
+
+# 依赖与构建产物
+node_modules/
+dist/
+build/
+out/
+__pycache__/
+*.pyc
+.venv/
+venv/
+target/
+*.class
+bin/
+obj/
+
+# 测试与覆盖率
+coverage/
+.nyc_output/
+.pytest_cache/

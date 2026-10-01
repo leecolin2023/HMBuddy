@@ -1,0 +1,112 @@
+"""Workspace：工作目录边界 + 文件发现（规格 8.1 / 第 9 节）。
+
+只负责发现文件与生成 ArtifactRef，不负责解析内容（职责边界见规格 8.1）。
+"""
+from __future__ import annotations
+
+import os
+import stat as stat_module
+from datetime import datetime, timezone
+from pathlib import Path
+
+from .artifact import ArtifactRef, make_artifact_id
+from .errors import WorkspaceBoundaryError
+
+# 核心验收格式（FR-W02）
+CORE_SUPPORTED_EXTENSIONS = {".docx": "docx", ".pdf": "pdf", ".xlsx": "xlsx", ".pptx": "pptx"}
+# 可选支持格式：允许出现在扫描结果中，但不属于本阶段验收项，也没有对应 Adapter
+OPTIONAL_SUPPORTED_EXTENSIONS = {".txt": "txt", ".md": "md"}
+
+_TEMP_NAMES = {".ds_store", "desktop.ini", "thumbs.db"}
+_TEMP_SUFFIXES = (".tmp", ".temp", ".crdownload", ".partial")
+
+
+class Workspace:
+    """代表当前允许系统操作的本地工作目录。"""
+
+    def __init__(self, root_path, extra_extensions: dict[str, str] | None = None):
+        root = Path(root_path).expanduser().resolve()
+        if not root.exists():
+            raise FileNotFoundError(f"workspace root does not exist: {root!r}")
+        if not root.is_dir():
+            raise NotADirectoryError(f"workspace root is not a directory: {root!r}")
+        self.root_path = root
+        self._extension_map = dict(CORE_SUPPORTED_EXTENSIONS)
+        if extra_extensions:
+            self._extension_map.update(
+                {ext.lower(): t for ext, t in extra_extensions.items()}
+            )
+
+    @property
+    def supported_extensions(self) -> dict[str, str]:
+        return dict(self._extension_map)
+
+    @staticmethod
+    def is_temp_or_hidden(name: str) -> bool:
+        """FR-W03：临时文件 / 隐藏文件不得被识别为有效 Artifact。"""
+        lowered = name.lower()
+        if name.startswith("."):
+            return True
+        if name.startswith("~$"):
+            return True
+        if lowered in _TEMP_NAMES:
+            return True
+        if lowered.endswith(_TEMP_SUFFIXES):
+            return True
+        if name.startswith("~") and lowered.endswith(".tmp"):
+            return True
+        return False
+
+    @staticmethod
+    def _has_hidden_attribute(st) -> bool:
+        attrs = getattr(st, "st_file_attributes", 0)
+        hidden_flag = getattr(stat_module, "FILE_ATTRIBUTE_HIDDEN", 0x2)
+        return bool(attrs & hidden_flag) if attrs else False
+
+    def list_artifacts(self) -> list[ArtifactRef]:
+        """FR-W01：递归遍历工作目录，返回支持格式的 ArtifactRef（按路径稳定排序）。"""
+        refs: list[ArtifactRef] = []
+        for dirpath, dirnames, filenames in os.walk(self.root_path):
+            dirnames[:] = [d for d in dirnames if not d.startswith(".")]
+            for filename in filenames:
+                if self.is_temp_or_hidden(filename):
+                    continue
+                file_path = Path(dirpath) / filename
+                try:
+                    st = file_path.stat()
+                except OSError:
+                    continue
+                if self._has_hidden_attribute(st):
+                    continue
+                extension = file_path.suffix.lower()
+                artifact_type = self._extension_map.get(extension)
+                if artifact_type is None:
+                    continue
+                refs.append(
+                    ArtifactRef(
+                        artifact_id=make_artifact_id(file_path),
+                        name=filename,
+                        path=str(file_path),
+                        extension=extension.lstrip("."),
+                        size=st.st_size,
+                        modified_at=datetime.fromtimestamp(
+                            st.st_mtime, tz=timezone.utc
+                        ),
+                        artifact_type=artifact_type,
+                    )
+                )
+        refs.sort(key=lambda ref: ref.path)
+        return refs
+
+    def resolve_path(self, path) -> Path:
+        """FR-W04 / ER-05：把路径解析为 Workspace 内的绝对路径，越界即报错。"""
+        candidate = Path(path).expanduser()
+        if not candidate.is_absolute():
+            candidate = self.root_path / candidate
+        resolved = candidate.resolve()
+        if resolved != self.root_path and self.root_path not in resolved.parents:
+            raise WorkspaceBoundaryError(resolved, self.root_path)
+        return resolved
+
+    def __repr__(self) -> str:  # pragma: no cover
+        return f"Workspace(root_path={str(self.root_path)!r})"
