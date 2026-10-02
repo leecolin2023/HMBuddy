@@ -1,0 +1,73 @@
+{
+  "phase": "phase-1.1-pluggable-file-capability-runtime",
+  "spec_version": "V0.1",
+  "recorded_at": "2026-10-02",
+  "previous_baselines": [
+    "evals/baseline-phase1-v0.1.json",
+    "evals/baseline-phase1-v0.2.json"
+  ],
+  "baseline_commit_before": "04611e5",
+  "environment": {
+    "python": "3.12.3",
+    "platform": "Windows 10 x64"
+  },
+  "architecture": {
+    "kernel": "plugin_runtime/（契约/Manifest/Discovery/Loader/Registry/Router/Policy/Runtime）",
+    "built_in_plugins": [
+      "hmbuddy.docx.core",
+      "hmbuddy.pdf.core",
+      "hmbuddy.xlsx.core",
+      "hmbuddy.pptx.core",
+      "hmbuddy.xls.core",
+      "hmbuddy.doc.core",
+      "hmbuddy.text.core"
+    ],
+    "external_example": "plugins/examples/markdown_reader（example.markdown.reader，priority=100 覆盖内置文本插件 50）",
+    "manifest_format": "JSON（规格第 9 节允许；内网离线零新增依赖，与 YAML 示例的取舍记录于此）",
+    "facade": "read_artifact() 签名与错误类型保持 Phase 1/2 兼容（AC-03）",
+    "ac01": "services/ 与 plugin_runtime/ 的代码中不出现任何具体 Adapter 类名（测试强制）",
+    "desktop": "desktop/ 未改动，继续只依赖 read_artifact()/Workspace（其 presenter 测试保持通过）"
+  },
+  "acceptance_criteria": {
+    "AC-01 Core 不硬编码 Provider": "pass（tests/test_capability_routing.py::test_ac01_core_does_not_reference_adapters）",
+    "AC-02 内置插件自动注册": "pass（7 个插件全部自动发现注册）",
+    "AC-03 read_artifact 兼容": "pass（Phase 1 Parser/Eval 与 Phase 2 presenter 测试零回归）",
+    "AC-04 不改 Core 新增 Markdown": "pass（evals/test_external_plugin.py：HMBUDDY_PLUGIN_PATH → 发现 → 读取 → provenance 记录 example.markdown.reader）",
+    "AC-05 多 Provider Registry": "pass（priority 排序 + provider_id 确定性 tie-break）",
+    "AC-06 插件故障隔离": "pass（import/构造失败只记入 load_report.failures）",
+    "AC-07 权限可观察": "pass（declared_permissions 注入 Provider；Policy 默认仅 filesystem.read）",
+    "AC-08 原有测试无回归": "pass",
+    "AC-09 Context 静默截断解决": "pass（ContextBuildResult + [Context Truncated] 标记 + XLSX 截断可见）",
+    "AC-10 Workspace 边界不削弱": "pass（含 symlink 逃逸测试 FR-S02）"
+  },
+  "context_hardening": {
+    "FR-C01 全局预算": "pass（max_chars/max_blocks/max_table_rows，truncated+omitted_blocks+reason）",
+    "FR-C02 XLSX 截断可见": "pass（rows/columns/cells_truncated 进入 Context [Note] 与 warnings）",
+    "FR-C03 PDF 页级 OCR 标记": "pass（pages[].requires_ocr → 页级 [Note]）",
+    "FR-C04 路径不默认暴露": "pass（Context 头部只有 Name/Type/Artifact ID，相对路径需显式传入）"
+  },
+  "test_run": {
+    "command": "python -m pytest -q",
+    "passed": 185,
+    "skipped": 4,
+    "failed": 0,
+    "previous": "123 passed / 4 skipped（Phase 1.1 前）",
+    "growth_reason": "+62：Plugin Manifest(T1)、Discovery/Loader/故障隔离(T2/T7)、Registry(T3/AC-05)、路由与权限(T4/T8/AC-01/02/06/07)、fallback/错误模型(ER-P01~03)、symlink 边界(FR-S02)、外部插件验收(T6/AC-04)、Context Hardening(T9)"
+  },
+  "trace_observability": {
+    "capability_trace_fields": [
+      "request_id", "capability", "artifact_id", "plugin_id", "provider_id",
+      "started_at", "duration_ms", "status", "warnings", "error_type", "fallback_from"
+    ],
+    "provenance_added": ["plugin_id", "provider_id", "plugin_version", "capability_trace"],
+    "provenance_kept": ["adapter", "parser_library"]
+  },
+  "known_limitations": [
+    "fallback 允许 ArtifactParseError/ProviderExecutionError 触发（越界/不存在/权限/取消禁止）；EncryptedArtifactError 属解析类错误，会触发 fallback（对 COM Provider 有意义）",
+    "Plugin permission 是 Runtime Policy，不是 OS 级沙箱（规格 18.2/26.4）；COM 等权限当前为声明式可观察，强制执行点在未来 update/convert 类能力接入时生效",
+    "Manifest 统一为 JSON（规格允许），YAML 不支持",
+    "外部插件加载使用 importlib 按文件路径加载，属于受信代码执行（规格 P7/18.2），无子进程隔离",
+    "external plugin 的 adapter 缓存按 OcrOptions 配置签名区分；跨进程共享缓存的语义未定义（单进程内一致）",
+    "Phase 1 已知限制（公式缓存/行级 PDF 文本/.doc 纯文本等）继续有效，见 baseline-phase1-v0.2.json"
+  ]
+}

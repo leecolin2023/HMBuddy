@@ -1,0 +1,33 @@
+{
+  "id": "hmbuddy.xlsx.core",
+  "name": "XLSX Core Plugin",
+  "version": "0.1.0",
+  "api_version": 1,
+  "description": "XLSX 读取（openpyxl）：Sheet/Cell/value+formula/合并区域",
+  "entrypoint": {
+    "module": "plugins.xlsx.plugin",
+    "class": "XlsxPlugin"
+  },
+  "accepts": {
+    "extensions": [
+      ".xlsx"
+    ]
+  },
+  "capabilities": [
+    {
+      "id": "artifact.read.full",
+      "priority": 100
+    }
+  ],
+  "permissions": [
+    "filesystem.read"
+  ],
+  "platforms": [
+    "windows",
+    "linux",
+    "darwin"
+  ],
+  "runtime": {
+    "python": ">=3.10"
+  }
+}

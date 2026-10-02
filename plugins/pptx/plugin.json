@@ -1,0 +1,33 @@
+{
+  "id": "hmbuddy.pptx.core",
+  "name": "PPTX Core Plugin",
+  "version": "0.1.0",
+  "api_version": 1,
+  "description": "PPTX 读取（python-pptx）：slide 归属/标题/文本框/表格/图片引用",
+  "entrypoint": {
+    "module": "plugins.pptx.plugin",
+    "class": "PptxPlugin"
+  },
+  "accepts": {
+    "extensions": [
+      ".pptx"
+    ]
+  },
+  "capabilities": [
+    {
+      "id": "artifact.read.full",
+      "priority": 100
+    }
+  ],
+  "permissions": [
+    "filesystem.read"
+  ],
+  "platforms": [
+    "windows",
+    "linux",
+    "darwin"
+  ],
+  "runtime": {
+    "python": ">=3.10"
+  }
+}

@@ -1,0 +1,33 @@
+{
+  "id": "example.markdown.reader",
+  "name": "Markdown Reader (Example External Plugin)",
+  "version": "0.1.0",
+  "api_version": 1,
+  "description": "最小外部插件示例：放置到 HMBUDDY_PLUGIN_PATH 后自动发现，priority=100 覆盖内置文本插件（50）",
+  "entrypoint": {
+    "module": "plugin",
+    "class": "MarkdownReaderPlugin"
+  },
+  "accepts": {
+    "extensions": [
+      ".md"
+    ]
+  },
+  "capabilities": [
+    {
+      "id": "artifact.read.full",
+      "priority": 100
+    }
+  ],
+  "permissions": [
+    "filesystem.read"
+  ],
+  "platforms": [
+    "windows",
+    "linux",
+    "darwin"
+  ],
+  "runtime": {
+    "python": ">=3.10"
+  }
+}

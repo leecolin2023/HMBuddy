@@ -1,0 +1,33 @@
+{
+  "id": "hmbuddy.pdf.core",
+  "name": "PDF Core Plugin",
+  "version": "0.1.0",
+  "api_version": 1,
+  "description": "PDF 读取（pdfplumber + 矢量线表格引擎 + 可选 OCR）",
+  "entrypoint": {
+    "module": "plugins.pdf.plugin",
+    "class": "PdfPlugin"
+  },
+  "accepts": {
+    "extensions": [
+      ".pdf"
+    ]
+  },
+  "capabilities": [
+    {
+      "id": "artifact.read.full",
+      "priority": 100
+    }
+  ],
+  "permissions": [
+    "filesystem.read"
+  ],
+  "platforms": [
+    "windows",
+    "linux",
+    "darwin"
+  ],
+  "runtime": {
+    "python": ">=3.10"
+  }
+}

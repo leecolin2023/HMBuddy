@@ -163,6 +163,8 @@ class PdfAdapter(ArtifactAdapter):
                         "text_chars": len(page_text.strip()),
                         "text_block_count": line_index,
                         "has_images": bool(images),
+                        # FR-C03：页级 OCR 标记
+                        "requires_ocr": not page_text.strip(),
                     }
                 )
 

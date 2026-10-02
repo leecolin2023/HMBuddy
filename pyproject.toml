@@ -39,7 +39,22 @@ ocr = [
 hmbuddy-desktop = "desktop.app:main"
 
 [tool.setuptools]
-packages = ["workspace", "adapters", "services", "llm", "desktop"]
+packages = [
+    "workspace",
+    "adapters",
+    "services",
+    "llm",
+    "desktop",
+    "plugin_runtime",
+    "plugins",
+    "plugins.docx",
+    "plugins.doc_legacy",
+    "plugins.pdf",
+    "plugins.xlsx",
+    "plugins.xls",
+    "plugins.pptx",
+    "plugins.text",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests", "evals"]

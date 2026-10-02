@@ -1,0 +1,39 @@
+{
+  "id": "hmbuddy.text.core",
+  "name": "Plain Text Core Plugin",
+  "version": "0.1.0",
+  "api_version": 1,
+  "description": "纯文本读取（多编码回退 utf-8/gb18030/utf-16；priority=50，可被外部同能力插件覆盖）",
+  "entrypoint": {
+    "module": "plugins.text.plugin",
+    "class": "TextPlugin"
+  },
+  "accepts": {
+    "extensions": [
+      ".txt",
+      ".md",
+      ".markdown",
+      ".rst",
+      ".csv",
+      ".tsv",
+      ".log"
+    ]
+  },
+  "capabilities": [
+    {
+      "id": "artifact.read.full",
+      "priority": 50
+    }
+  ],
+  "permissions": [
+    "filesystem.read"
+  ],
+  "platforms": [
+    "windows",
+    "linux",
+    "darwin"
+  ],
+  "runtime": {
+    "python": ">=3.10"
+  }
+}

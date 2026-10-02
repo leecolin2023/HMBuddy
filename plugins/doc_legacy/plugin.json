@@ -1,0 +1,35 @@
+{
+  "id": "hmbuddy.doc.core",
+  "name": "Legacy DOC Plugin",
+  "version": "0.1.0",
+  "api_version": 1,
+  "description": "遗留 .doc 读取（Word/WPS COM，懒加载；仅产出段落级结构）",
+  "entrypoint": {
+    "module": "plugins.doc_legacy.plugin",
+    "class": "DocLegacyPlugin"
+  },
+  "accepts": {
+    "extensions": [
+      ".doc"
+    ]
+  },
+  "capabilities": [
+    {
+      "id": "artifact.read.full",
+      "priority": 100
+    }
+  ],
+  "permissions": [
+    "filesystem.read",
+    "office.com",
+    "wps.com"
+  ],
+  "platforms": [
+    "windows",
+    "linux",
+    "darwin"
+  ],
+  "runtime": {
+    "python": ">=3.10"
+  }
+}

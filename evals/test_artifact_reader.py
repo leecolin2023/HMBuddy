@@ -111,7 +111,8 @@ def test_corrupt_docx_raises_parse_error(tmp_path):
     target.write_bytes(b"this is not a zip archive")
     with pytest.raises(ArtifactParseError) as excinfo:
         read_artifact(target)
-    assert excinfo.value.adapter == "DocxAdapter"
+    # Phase 1.1：adapter 字段记录的是执行 Provider 的 id（可追溯到插件）
+    assert "docx" in excinfo.value.adapter
 
 
 def test_ole_magic_docx_raises_encrypted(tmp_path):

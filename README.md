@@ -156,12 +156,38 @@ python app.py evals/fixtures/sample.docx
 
 Phase 2 的设计原则是：**Desktop 只是薄应用层，不复制 Phase 1 Runtime。**
 
+### 插件化文件能力运行时（Phase 1.1）
+
+文件能力不再由核心代码静态绑定（`ADAPTER_CLASSES` 已移除），而是通过插件运行时装配（规格：[requirements/phase-1.1-pluggable-file-capability-runtime-v0.1.md](./requirements/phase-1.1-pluggable-file-capability-runtime-v0.1.md)）：
+
+```text
+read_artifact()            ← Stable Facade（Phase 1/2 调用方式不变）
+      ↓
+CapabilityRuntime.execute(CapabilityRequest)
+      ↓
+CapabilityRegistry         ← 内置插件 + HMBUDDY_PLUGIN_PATH 外部插件自动发现注册
+      ↓
+Router（确定性规则：capability → supports → availability → 权限 → priority → tie-break）
+      ↓
+CapabilityProvider（插件）
+      ↓
+Adapter / API / COM（插件内部实现技术）
+      ↓
+Artifact（Core Contract，provenance 增加 plugin_id / provider_id / plugin_version）
+```
+
+- 插件以 `plugin.json` Manifest 声明 id/版本/api_version/能力/权限（规格第 9 节允许 JSON 以减少运行依赖）；
+- 新增文件能力**不需要修改 Core**：把插件目录放入 `HMBUDDY_PLUGIN_PATH` 即被自动发现（`plugins/examples/markdown_reader` 是可运行的最小示例）；
+- 单插件加载失败被隔离记录，不影响其他插件；fallback 全程可观察（trace 记录 `fallback_from`）；
+- 权限是 Runtime Policy 而非 OS 沙箱：默认只授予 `filesystem.read`，声明与授权可列出观察；
+- Context Hardening：全局字符/块预算、XLSX 解析期截断可见、PDF 页级 OCR 标记、绝对路径默认不进入 LLM Context。
+
 例如：
 
 - 文件列表来自 `Workspace.list_artifacts()`；
 - 文件读取来自 `read_artifact()`；
 - 问答来自 `client.ask(artifact, question)`；
-- UI 不直接调用具体格式 Adapter。
+- UI 不直接调用具体格式 Adapter，也不感知插件体系。
 
 Phase 1 的设计原则（规格第 5 节）：
 
@@ -193,14 +219,23 @@ desktop/                     Phase 2 桌面应用层
   app.py                     Tkinter 页面、事件、后台线程
   presenter.py               Artifact → UI 文本格式化
 workspace/                   Workspace、ArtifactRef、Artifact/ArtifactBlock、错误类型
-adapters/                    适配层（7 个适配器 + 表格契约 + OCR 子包 + 规范化）
+plugin_runtime/              Phase 1.1 插件运行时内核
+  contracts.py               CapabilityRequest/Result、ArtifactLocator、Provider/Plugin 协议
+  manifest.py                plugin.json 解析与校验
+  discovery.py / loader.py   内置 + 外部插件发现与加载（故障隔离）
+  registry.py / router.py    能力注册、确定性路由（priority + tie-break）
+  policy.py / runtime.py     权限策略、execute + trace + fallback
+plugins/                     文件能力插件（plugin.json + plugin.py）
+  docx/ doc_legacy/ pdf/ xlsx/ xls/ pptx/ text/
+  examples/markdown_reader/  外部插件最小示例（HMBUDDY_PLUGIN_PATH 引入）
+adapters/                    具体解析实现（由插件包装使用，不再被 Core 静态引用）
   adapters/pdf_tables.py     PDF 矢量线表格引擎
   adapters/ocr/              PaddleOCR / SLANet 表格结构识别（懒加载、默认关闭）
-services/                    ArtifactReader：read_artifact() 单一入口
+services/                    Stable Facade：read_artifact() 单一入口
 llm/                         artifact_to_context() + OpenAI 兼容客户端
-evals/                       Parser / 表格 / 文本 / OCR / Context / QA Eval + baseline
+evals/                       Parser / 表格 / 文本 / OCR / Context / QA / 插件化 Eval + baseline
 evals/fixtures/              8 个标准测试样例（已提交，生成脚本 generate_fixtures.py）
-tests/                       领域模型 / 错误类型 / Workspace / 桌面 presenter 单元测试
+tests/                       领域模型 / 错误 / Workspace / 插件运行时 / 桌面 presenter 单元测试
 requirements/                分阶段需求规格说明书
 start_hmbuddy_desktop.bat    Windows 双击启动入口
 ```
@@ -254,7 +289,7 @@ context = artifact_to_context(artifact)
 ## 7. 测试
 
 ```bash
-python -m pytest -q                                   # 全部 Eval（120 项）
+python -m pytest -q                                   # 全部 Eval（185 项）
 python evals/fixtures/generate_fixtures.py            # 重新生成测试样例
 ```
 
@@ -262,8 +297,9 @@ python evals/fixtures/generate_fixtures.py            # 重新生成测试样例
 - 表格 Eval：矢量网格重建、表头识别、跨页续表链接、DOCX 合并/嵌套表格；
 - OCR Eval：分片/行分组/后处理规则（纯逻辑，无需 paddle 环境）+ 模型缺失降级；
 - Context Eval：问题所需事实必须进入 Context（区分 Parser Error 与 Context Error）；
+- 插件化 Eval：Manifest 校验（T1）、发现/加载/故障隔离（T2/T7）、Registry priority（T3/AC-05）、路由（T4/AC-01/02）、权限（T8/AC-07）、fallback trace、外部 Markdown 插件验收（T6/AC-04）、Context Hardening（T9）；
 - QA Eval：配置 LLM 环境变量后运行真实问答（关键词校验）；
-- Baseline：[evals/baseline-phase1-v0.2.json](./evals/baseline-phase1-v0.2.json)（v0.1 为 fce 融入前记录）。
+- Baseline：[evals/baseline-phase1.1-v0.1.json](./evals/baseline-phase1.1-v0.1.json)（历史：phase1-v0.1 / phase1-v0.2）。
 
 桌面层新增的格式化逻辑放在 `desktop.presenter`，可以在无 GUI 环境下测试。
 

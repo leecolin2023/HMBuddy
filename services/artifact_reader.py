@@ -1,11 +1,11 @@
-"""ArtifactReader（规格第 10 节 + Step 6）：read_artifact 单一入口。
+"""ArtifactReader（规格第 10/21 节 + Phase 1.1 Stable Facade）。
 
-职责：
-- FR-A01 单一入口：上层禁止直接依赖具体 Adapter；
-- FR-A02 自动路由：按扩展名选择 Adapter（判断只存在于本层，见 P2）；
-- FR-A04 保留 provenance：读取时间、耗时、sha256 等；
-- 第 18 节错误处理：ER-01 ~ ER-05 全部落到显式错误类型；
-- 第 23 节 Logging：每次读取记录 artifact_id/path/type/adapter/size/耗时/状态/错误。
+迁移后调用关系（规格第 31 节）：
+    read_artifact() → CapabilityRuntime → CapabilityRegistry → Router → Provider
+
+Reader 只保留：读前校验（mode / 边界 / 存在性 / 大小）、Request 构造、
+provenance 补充与日志。本模块不 import 任何具体 Adapter（AC-01）——
+格式实现全部由插件注册进入 Registry。
 """
 from __future__ import annotations
 
@@ -15,17 +15,31 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from adapters import default_adapters
-from adapters.base import ArtifactAdapter, OcrOptions
+from plugin_runtime import (
+    CapabilityRuntime,
+    get_default_runtime,
+)
+from plugin_runtime.base_provider import CapabilityProviderBase
+from plugin_runtime.contracts import (
+    CAPABILITY_READ_FULL,
+    CapabilityRequest,
+    CapabilityResult,
+    PluginContext,
+)
+from plugin_runtime.discovery import DiscoveryReport
+from plugin_runtime.errors import (
+    CapabilityNotFoundError,
+    ProviderExecutionError,
+)
+from plugin_runtime.loader import LoadReport
+from plugin_runtime.registry import CapabilityRegistry
 from workspace.artifact import Artifact, ArtifactRef, make_artifact_id
 from workspace.errors import (
     ArtifactNotFoundError,
     ArtifactParseError,
     ArtifactRuntimeError,
     ArtifactTooLargeError,
-    EncryptedArtifactError,
     UnsupportedArtifactTypeError,
-    WorkspaceBoundaryError,
 )
 from workspace.workspace import Workspace
 
@@ -46,24 +60,61 @@ def _file_sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+class _AdapterCompatProvider(CapabilityProviderBase):
+    """兼容层：把调用方显式传入的 Adapter 实例包装成 Provider。
+
+    仅用于旧调用方式 ArtifactReader(adapters=[...])；正常路径下
+    Provider 由插件注册提供（AC-01：本模块不引用具体 Adapter 类）。
+    """
+
+    def __init__(self, adapter, ocr_options=None):
+        CapabilityProviderBase.__init__(self)
+        self._compat_adapter = adapter
+        self.capability_id = CAPABILITY_READ_FULL
+        self.provider_id = f"compat.{type(adapter).__name__}"
+        self.plugin_id = "compat"
+        self.priority = 100
+        self.extensions = tuple(getattr(adapter, "supported_extensions", ()) or ())
+        self.declared_permissions = ("filesystem.read",)
+
+    def create_adapter(self, context):
+        return self._compat_adapter
+
+
+def _build_compat_runtime(adapters) -> tuple[CapabilityRuntime, DiscoveryReport, LoadReport]:
+    registry = CapabilityRegistry()
+    for adapter in adapters:
+        registry.register(_AdapterCompatProvider(adapter))
+    runtime = CapabilityRuntime(registry)
+    return runtime, DiscoveryReport(), LoadReport()
+
+
 class ArtifactReader:
-    """path_or_ref → 路由 → Adapter → Artifact。"""
+    """path_or_ref → CapabilityRequest → Runtime → Registry → Provider → Artifact。"""
 
     def __init__(
         self,
         workspace: Workspace | None = None,
-        adapters: list[ArtifactAdapter] | None = None,
+        adapters: list | None = None,
         max_file_size: int = DEFAULT_MAX_FILE_SIZE,
-        ocr_options: OcrOptions | None = None,
+        ocr_options=None,
+        external_plugin_dirs: list[Path] | None = None,
     ):
         self.workspace = workspace
         self.ocr_options = ocr_options
-        self.adapters: list[ArtifactAdapter] = (
-            list(adapters)
-            if adapters is not None
-            else default_adapters(ocr_options)
-        )
         self.max_file_size = max_file_size
+        if adapters is not None:
+            runtime, discovery, load_report = _build_compat_runtime(adapters)
+            self.discovery = discovery
+            self.load_report = load_report
+        else:
+            assembly = get_default_runtime(
+                force_reload=external_plugin_dirs is not None
+            )
+            runtime = assembly.runtime
+            self.discovery = assembly.discovery
+            self.load_report = assembly.load_report
+        self.runtime: CapabilityRuntime = runtime
 
     def read_artifact(self, path_or_ref, mode: str = "full") -> Artifact:
         if mode != "full":
@@ -79,7 +130,7 @@ class ArtifactReader:
             raw_path = Path(path_or_ref)
             artifact_id = None
 
-        # ER-05：Workspace 边界检查
+        # ER-05：Workspace 边界检查（FR-S01：Provider 使用 Reader 校验后的路径）
         if self.workspace is not None:
             resolved = self.workspace.resolve_path(raw_path)
         else:
@@ -93,74 +144,109 @@ class ArtifactReader:
         if size > self.max_file_size:
             raise ArtifactTooLargeError(resolved, size, self.max_file_size)
 
-        # FR-A02：路由（.docx→DocxAdapter 等）
-        adapter = self._route(resolved)
         if artifact_id is None:
             artifact_id = make_artifact_id(resolved)
+        extension = resolved.suffix.lstrip(".").lower()
+        artifact_type = extension or "unknown"
+        artifact_ref = ArtifactRef(
+            artifact_id=artifact_id,
+            name=resolved.name,
+            path=str(resolved),
+            extension=extension,
+            size=size,
+            modified_at=datetime.fromtimestamp(resolved.stat().st_mtime, tz=timezone.utc),
+            artifact_type=artifact_type,
+        )
 
+        request = CapabilityRequest(
+            capability=CAPABILITY_READ_FULL,
+            artifact_ref=artifact_ref,
+            options={"artifact_id": artifact_id},
+        )
+        context = PluginContext(
+            resolved_path=resolved,
+            workspace_root=self.workspace.root_path if self.workspace is not None else None,
+            ocr_options=self.ocr_options,
+        )
+
+        adapter_name = "-"
         started = time.perf_counter()
         try:
-            artifact = adapter.read(resolved, artifact_id)
+            result: CapabilityResult = self.runtime.execute(request, context)
+        except CapabilityNotFoundError as exc:
+            # ER-01 兼容：没有任何 Provider 认领该扩展名 → UnsupportedArtifactTypeError
+            duration_ms = (time.perf_counter() - started) * 1000
+            self._log_error(resolved, "-", size, duration_ms, artifact_id, exc)
+            raise UnsupportedArtifactTypeError(resolved, resolved.suffix.lower()) from exc
+        except ProviderExecutionError as exc:
+            # ER-02 兼容：Provider 执行期失败本质是解析失败，落回 ArtifactParseError
+            # （adapter 记为 provider_id，原始异常保留在因果链上）
+            duration_ms = (time.perf_counter() - started) * 1000
+            wrapped = ArtifactParseError(
+                resolved, adapter=exc.provider_id, cause=exc.cause or exc
+            )
+            self._log_error(resolved, exc.provider_id, size, duration_ms, artifact_id, wrapped)
+            raise wrapped from exc
+        except ArtifactRuntimeError as exc:
+            duration_ms = (time.perf_counter() - started) * 1000
+            self._log_error(resolved, "-", size, duration_ms, artifact_id, exc)
+            raise
         except Exception as exc:
             duration_ms = (time.perf_counter() - started) * 1000
-            if isinstance(exc, ArtifactRuntimeError):
-                # EncryptedArtifactError / 越界等已是明确错误类型，直接记录并上抛
-                self._log(
-                    "error", resolved, adapter, size, duration_ms,
-                    artifact_id=artifact_id, error=exc,
-                )
-                raise
-            wrapped = ArtifactParseError(
-                resolved, adapter=type(adapter).__name__, cause=exc
-            )
-            self._log(
-                "error", resolved, adapter, size, duration_ms,
-                artifact_id=artifact_id, error=wrapped,
-            )
+            wrapped = ArtifactParseError(resolved, adapter="plugin-runtime", cause=exc)
+            self._log_error(resolved, "-", size, duration_ms, artifact_id, wrapped)
             raise wrapped from exc
 
+        artifact: Artifact = result.value
+        if not isinstance(artifact, Artifact):
+            raise ArtifactParseError(
+                resolved,
+                adapter=result.provider_id,
+                cause=TypeError(
+                    f"provider returned {type(artifact).__name__} instead of Artifact (P4)"
+                ),
+            )
         duration_ms = (time.perf_counter() - started) * 1000
+        adapter_name = artifact.provenance.get("adapter", "-")
+
+        # FR-A04 + 规格 24 节：provenance 增加 plugin / provider 信息
         artifact.provenance.update(
             {
+                "plugin_id": result.plugin_id,
+                "provider_id": result.provider_id,
+                "plugin_version": result.plugin_version,
+                "capability_trace": result.metadata.get("trace", {}),
                 "read_at": datetime.now(timezone.utc).isoformat(),
                 "parse_duration_ms": round(duration_ms, 2),
                 "file_sha256": _file_sha256(resolved),
             }
         )
-        self._log(
-            "ok", resolved, adapter, size, duration_ms, artifact_id=artifact_id
-        )
+        self._log_ok(resolved, adapter_name, artifact.artifact_type, size, duration_ms, artifact_id, result)
         return artifact
 
-    def _route(self, path: Path) -> ArtifactAdapter:
-        for adapter in self.adapters:
-            if adapter.supports(path):
-                return adapter
-        # ER-01：不支持格式，不静默失败
-        raise UnsupportedArtifactTypeError(path, path.suffix.lower())
+    # ------------------------------------------------------------------
 
-    def _log(
-        self,
-        status: str,
-        path: Path,
-        adapter: ArtifactAdapter,
-        file_size: int,
-        duration_ms: float,
-        *,
-        artifact_id: str | None,
-        error: Exception | None = None,
+    def _log_ok(
+        self, path: Path, adapter: str, artifact_type: str, file_size: int,
+        duration_ms: float, artifact_id: str, result: CapabilityResult,
     ) -> None:
-        fields = (
-            f"path={path} type={adapter.artifact_type} "
-            f"adapter={type(adapter).__name__} artifact_id={artifact_id or '-'} "
-            f"file_size={file_size} parse_duration_ms={duration_ms:.1f} "
-            f"parse_status={status}"
+        logger.info(
+            "artifact_read path=%s type=%s adapter=%s artifact_id=%s "
+            "plugin_id=%s provider_id=%s file_size=%d parse_duration_ms=%.1f "
+            "parse_status=ok",
+            path, artifact_type, adapter, artifact_id,
+            result.plugin_id, result.provider_id, file_size, duration_ms,
         )
-        if error is not None:
-            fields += f" error={error!r}"
-            logger.error("artifact_read %s", fields)
-        else:
-            logger.info("artifact_read %s", fields)
+
+    def _log_error(
+        self, path: Path, adapter: str, file_size: int,
+        duration_ms: float, artifact_id: str, error: Exception,
+    ) -> None:
+        logger.error(
+            "artifact_read path=%s adapter=%s artifact_id=%s file_size=%d "
+            "parse_duration_ms=%.1f parse_status=error error=%r",
+            path, adapter, artifact_id, file_size, duration_ms, error,
+        )
 
 
 _default_reader: ArtifactReader | None = None
@@ -171,11 +257,11 @@ def read_artifact(
     mode: str = "full",
     *,
     workspace: Workspace | None = None,
-    adapters: list[ArtifactAdapter] | None = None,
+    adapters: list | None = None,
     max_file_size: int = DEFAULT_MAX_FILE_SIZE,
-    ocr_options: OcrOptions | None = None,
+    ocr_options=None,
 ) -> Artifact:
-    """模块级单一入口（FR-A01）。
+    """Stable Facade（规格第 21 节）：Phase 1 / Phase 2 调用方式保持不变。
 
     workspace=None 时按普通文件路径读取；传入 Workspace 时强制边界检查。
     ocr_options 用于开启扫描件 OCR（默认关闭，模型仅从本地目录解析）。

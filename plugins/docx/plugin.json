@@ -1,0 +1,33 @@
+{
+  "id": "hmbuddy.docx.core",
+  "name": "DOCX Core Plugin",
+  "version": "0.1.0",
+  "api_version": 1,
+  "description": "DOCX 读取（python-docx）：标题层级/段落/列表/表格（合并单元格 span）/嵌套表格/图片引用",
+  "entrypoint": {
+    "module": "plugins.docx.plugin",
+    "class": "DocxPlugin"
+  },
+  "accepts": {
+    "extensions": [
+      ".docx"
+    ]
+  },
+  "capabilities": [
+    {
+      "id": "artifact.read.full",
+      "priority": 100
+    }
+  ],
+  "permissions": [
+    "filesystem.read"
+  ],
+  "platforms": [
+    "windows",
+    "linux",
+    "darwin"
+  ],
+  "runtime": {
+    "python": ">=3.10"
+  }
+}
