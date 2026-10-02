@@ -35,13 +35,14 @@ def test_list_artifacts_finds_supported_files(ws_dir):
     workspace = Workspace(ws_dir)
     refs = workspace.list_artifacts()
     names = {ref.name for ref in refs}
-    assert names == {"a.docx", "b.pdf", "c.xlsx", "d.pptx"}
+    assert names == {"a.docx", "b.pdf", "c.xlsx", "d.pptx", "notes.txt"}
     types = {ref.name: ref.artifact_type for ref in refs}
     assert types == {
         "a.docx": "docx",
         "b.pdf": "pdf",
         "c.xlsx": "xlsx",
         "d.pptx": "pptx",
+        "notes.txt": "txt",
     }
 
 
@@ -67,12 +68,14 @@ def test_artifact_id_stable_across_scans(ws_dir):
 
 
 def test_optional_extensions_only_when_requested(ws_dir):
+    (ws_dir / "config.ini").write_bytes(b"[section]\nkey=value\n")
+    # 默认核心扩展集不包含 .ini
     default_refs = Workspace(ws_dir).list_artifacts()
-    assert all(ref.extension not in {"txt", "md"} for ref in default_refs)
+    assert all(ref.extension != "ini" for ref in default_refs)
 
-    extended = Workspace(ws_dir, extra_extensions={".txt": "txt"}).list_artifacts()
+    extended = Workspace(ws_dir, extra_extensions={".ini": "txt"}).list_artifacts()
     names = {ref.name for ref in extended}
-    assert "notes.txt" in names
+    assert "config.ini" in names
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows 隐藏属性")

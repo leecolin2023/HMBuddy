@@ -1,4 +1,5 @@
 """ArtifactReader Eval（FR-A01 ~ FR-A04 + 第 18 节错误处理 + 第 22-B 节 Parser 成功率）。"""
+import base64
 from pathlib import Path
 import zipfile
 
@@ -21,8 +22,10 @@ EXPECTED_TYPE = {
     "sample.docx": "docx",
     "complex.docx": "docx",
     "sample.pdf": "pdf",
+    "sample_table.pdf": "pdf",
     "sample.xlsx": "xlsx",
     "sample_multisheet.xlsx": "xlsx",
+    "sample.xls": "xls",
     "sample.pptx": "pptx",
 }
 
@@ -66,11 +69,10 @@ def test_unsupported_type(tmp_path):
         zf.writestr("inner.txt", "hello")
     with pytest.raises(UnsupportedArtifactTypeError):
         read_artifact(target)
-    # 可选格式（txt/md）允许扫描发现，但没有 Adapter，读取时明确报错
-    text_file = tmp_path / "notes.txt"
-    text_file.write_text("hello", encoding="utf-8")
+    binary = tmp_path / "payload.exe"
+    binary.write_bytes(b"MZ fake binary")
     with pytest.raises(UnsupportedArtifactTypeError):
-        read_artifact(text_file)
+        read_artifact(binary)
 
 
 def test_missing_file(tmp_path):
@@ -122,6 +124,36 @@ def test_ole_magic_docx_raises_encrypted(tmp_path):
         read_artifact(target)
     assert isinstance(excinfo.value, ArtifactParseError)
     assert excinfo.value.adapter == "DocxAdapter"
+
+
+def test_ocr_enabled_without_models_degrades_gracefully(tmp_path):
+    """开启 OCR 但模型目录缺失：不抛异常，保留 requires_ocr 标记并记录错误。"""
+    import io
+
+    pytest.importorskip("fpdf")
+    from fpdf import FPDF
+
+    from adapters.base import OcrOptions
+
+    # 生成一个只有图片、没有文本层的 PDF（扫描件形态）
+    png_1px = io.BytesIO(
+        base64.b64decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJ"
+            "AAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+        )
+    )
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.image(png_1px, x=50, y=50)
+    target = tmp_path / "scanned.pdf"
+    pdf.output(str(target))
+
+    reader = ArtifactReader(
+        ocr_options=OcrOptions(enable_ocr=True, model_root=tmp_path / "no-such-models")
+    )
+    artifact = reader.read_artifact(target)
+    assert artifact.metadata["requires_ocr"] is True
+    assert artifact.metadata["ocr"]["status"] == "error"
 
 
 def test_encrypted_error_detection_helper():

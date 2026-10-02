@@ -1,0 +1,99 @@
+{
+  "phase": "phase-1-local-office-artifact-runtime",
+  "spec_version": "V0.1 + fce 能力融入",
+  "recorded_at": "2026-10-02",
+  "previous_baseline": "evals/baseline-phase1-v0.1.json",
+  "environment": {
+    "python": "3.12.3",
+    "platform": "Windows 10 x64",
+    "libraries": {
+      "python-docx": "1.2.0",
+      "pdfplumber": "0.11.9",
+      "openpyxl": "3.1.5",
+      "python-pptx": "1.0.2",
+      "xlrd": "2.0.2",
+      "fpdf2": "fixtures 生成用",
+      "xlwt": "fixtures 生成用",
+      "paddleocr/paddlex/pypdfium2": "可选依赖（OCR，默认未安装）"
+    }
+  },
+  "fce_integration": {
+    "source": "fce/（历史文件内容提取工具，能力已融入 adapters/ 后从工作区移除）",
+    "integrated": [
+      "矢量线表格引擎（union-find 合并单元格、表头识别、重复表头面板拆分、跨页续表链接）→ adapters/pdf_tables.py，几何采集层改用 pdfplumber 原语",
+      "表格契约（TableCell/TableRow/ExtractedTable：rowspan/colspan/bbox/confidence/continuation）→ adapters/tables.py",
+      "OCR 管线（PaddleOCR 懒加载、超大图分片、破折号/英文间距/列表符号后处理、SLANet 表格结构识别）→ adapters/ocr/，默认关闭",
+      "多编码纯文本解析（utf-8-sig/utf-8/gb18030/utf-16/latin-1 回退）→ adapters/text.py",
+      ".xls（xlrd → Excel/WPS COM 回退）→ adapters/xls.py",
+      ".doc（Word/WPS COM）→ adapters/doc_legacy.py",
+      "DOCX 嵌套表格提取与单元格文本折叠 → adapters/docx.py 增强",
+      "单元格文本/数值规范化（collapse_cell_text / normalize_spreadsheet_value）→ adapters/textnorm.py"
+    ],
+    "not_integrated": [
+      "excel/json/markdown 输出器（输出层，超出 adapters 只读范围）",
+      "GUI（gui.py）",
+      "doctor 诊断 / ocr_benchmark（工具类，随真实需要再引入）",
+      "batch_store（批处理存储，由 Workspace/Reader 职责替代）"
+    ],
+    "boundary_preserved": "沿用 fce/AGENTS.md 约束：OCR 重依赖全部懒加载且默认关闭，模型只从本地目录（HMBUDDY_MODEL_DIR / FCE_MODEL_DIR / ./models）解析，绝不隐式下载"
+  },
+  "parser_eval": {
+    "fixtures_total": 8,
+    "fixtures_passed": 8,
+    "success_rate": 1.0,
+    "cases": {
+      "TC-DOCX-01": "pass（标准/复杂 DOCX：三级标题、段落/列表、表格、合并单元格 span、嵌套表格、图片引用、block 顺序）",
+      "TC-PDF-01": "pass（page 数、page attribution、文本顺序、中文文本层提取）",
+      "TC-PDF-表格": "pass（矢量网格重建 3x3、表头识别、跨页续表链接 continuation_id）",
+      "TC-XLSX-01": "pass（sheet 数/名、value、formula、merged cells、used range）",
+      "TC-XLS-01": "pass（xlrd 读取、数值网格、合并单元格 A5:C5）",
+      "TC-PPTX-01": "pass（slide 数、title、textbox、table、slide attribution）",
+      "TC-TEXT-01": "pass（utf-8/gb18030/BOM、空行跳过、原始行号保留）",
+      "TC-OCR-逻辑": "pass（分片、行分组、破折号/英文间距/列表标记后处理，无需 paddle 环境）"
+    }
+  },
+  "discovery_eval": {
+    "supported_files": 8,
+    "discovered": 8,
+    "discovery_rate": 1.0,
+    "temp_and_hidden_files_ignored": true,
+    "workspace_boundary_enforced": true
+  },
+  "context_fact_checks": {
+    "xlsx_standard: 2025年营业收入是多少？": "pass（营业收入/1500 在 Context 中）",
+    "docx_standard: 审批流程由谁负责？": "pass（2.2 审批流程/运营部 在 Context 中）",
+    "pptx_standard: 第 3 页提出了哪三个问题？": "pass（[Slide 3]/问题一/二/三 在 Context 中）",
+    "pdf_standard: 报告对主要风险的结论是什么？": "pass（流动性/久期 在 Context 中）"
+  },
+  "llm_qa_eval": {
+    "status": "not_run",
+    "reason": "未配置 HMBUDDY_LLM_BASE_URL / HMBUDDY_LLM_MODEL",
+    "how_to_run": "配置环境变量后执行 pytest evals/test_llm_qa.py -k test_llm_answers"
+  },
+  "error_handling_checks": {
+    "ER-01 不支持格式": "pass（UnsupportedArtifactTypeError；.zip/.exe）",
+    "ER-02 文件损坏": "pass（ArtifactParseError，含 adapter 与 cause；含损坏 .doc）",
+    "ER-03 加密/OLE 魔数": "pass（EncryptedArtifactError）",
+    "ER-04 超大文件": "pass（ArtifactTooLargeError，阈值默认 50MB 可配置）",
+    "ER-05 Workspace 越界": "pass（WorkspaceBoundaryError）",
+    "OCR 模型缺失降级": "pass（开启 OCR 但模型目录缺失：不抛异常，保留 requires_ocr 并记录 ocr.status=error）"
+  },
+  "test_run": {
+    "command": "python -m pytest -q",
+    "passed": 120,
+    "skipped": 4,
+    "failed": 0,
+    "skipped_reason": "真实 LLM 问答 Eval 需配置 LLM 环境变量"
+  },
+  "known_limitations": [
+    "XLSX：openpyxl 生成的公式样例没有 Excel 计算缓存，公式单元格 value 为 None；真实 Excel 保存过的文件会同时拿到缓存值",
+    "PDF：文本块为行级（line-level）；矢量表格引擎要求表格有几何边框线，纯无线表格回退 pdfplumber 检测；扫描件 OCR 需安装 ocr 依赖组并本地放置模型",
+    "PPTX：不解析组合形状之外的图表/SmartArt；标题占位符会同时作为 textbox 出现一次",
+    "DOCX：嵌套表格以文本行（'a | b'）折叠进单元格文本；.doc 只能取纯文本（无标题层级）",
+    "OCR：默认关闭；表格结构识别（SLANet）仅在 enable_table_ocr=True 且 OCR 文本框呈表格形态时触发",
+    "Artifact ID 基于文件绝对路径：文件移动/重命名后 ID 会变",
+    "fixture 中的 PDF 由 fpdf2 生成（reportlab 的 TTF 子集化对 CJK 写出的 ToUnicode 有缺陷，实际观察到的失败）",
+    "Workspace 扫描不跟随符号链接循环保护（Phase 1 未处理）",
+    "CSV/TSV 按纯文本行读取，未做表格化解析（fce 同行为，按真实需求再引入）"
+  ]
+}

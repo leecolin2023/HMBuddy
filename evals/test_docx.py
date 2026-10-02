@@ -61,16 +61,42 @@ def test_standard_docx_metadata(docx_standard):
     assert "author" in docx_standard.metadata["core_properties"]
 
 
-def test_complex_docx_three_level_headings_and_two_tables(docx_complex):
+def test_complex_docx_three_level_headings_and_tables(docx_complex):
     headings = docx_complex.blocks_of_type("heading")
     levels = [b.metadata["level"] for b in headings]
     assert 3 in levels
-    assert levels.count(1) == 4
-    assert len(docx_complex.blocks_of_type("table")) == 2
+    assert levels.count(1) == 5
+    assert len(docx_complex.blocks_of_type("table")) == 3
     assert docx_complex.metadata["list_item_count"] == 3
     # 三级标题确实出现在正确的层级位置
     level3_texts = [b.text for b in headings if b.metadata["level"] == 3]
     assert level3_texts == ["2.1.1 文件发现", "2.1.2 统一读取"]
+
+
+def test_complex_docx_merged_header_cells(docx_complex):
+    """fce 能力：合并单元格以 rowspan/colspan 锚点形式保留。"""
+    risk_table = docx_complex.blocks_of_type("table")[1]
+    merged = risk_table.metadata.get("cells_merged")
+    assert merged is not None
+    anchor = next(
+        cell for cell in merged if cell["text"] == "风险类别"
+    )
+    assert anchor["row"] == 1
+    assert anchor["column"] == 1
+    assert anchor["colspan"] == 2
+    # 展开后的网格：锚点有值，被合并位置为空串
+    assert risk_table.metadata["cells"][0] == ["风险类别", "", "应对策略"]
+
+
+def test_complex_docx_nested_table_content(docx_complex):
+    """fce 能力：嵌套表格内容不被丢失，出现在单元格文本中。"""
+    nested_table = docx_complex.blocks_of_type("table")[2]
+    all_cell_text = "\n".join(
+        " | ".join(row) for row in nested_table.metadata["cells"]
+    )
+    assert "以下为部门联系人嵌套表格" in all_cell_text
+    assert "姓名 | 电话" in all_cell_text
+    assert "张伟 | 13800000000" in all_cell_text
 
 
 def test_docx_artifact_ids_stable(reader, fixtures_dir):

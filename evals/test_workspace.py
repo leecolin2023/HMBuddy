@@ -9,12 +9,14 @@ def test_all_required_fixtures_exist(fixtures_dir):
 
 
 def test_discovery_success_rate_is_100_percent(fixtures_dir):
-    """6 个支持格式的样例必须全部被发现，且不发现任何不支持文件。"""
+    """8 个支持格式的样例必须全部被发现，且不发现任何不支持文件。"""
     workspace = Workspace(fixtures_dir)
     refs = workspace.list_artifacts()
     found = {ref.name for ref in refs}
     assert EXPECTED_FIXTURES <= found
-    assert all(ref.artifact_type in {"docx", "pdf", "xlsx", "pptx"} for ref in refs)
+    assert all(
+        ref.artifact_type in {"docx", "pdf", "xlsx", "xls", "pptx"} for ref in refs
+    )
     # 生成脚本与 __pycache__ 等不得混入
     assert all(not ref.name.endswith(".py") for ref in refs)
     assert found == EXPECTED_FIXTURES

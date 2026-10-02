@@ -16,7 +16,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from adapters import default_adapters
-from adapters.base import ArtifactAdapter
+from adapters.base import ArtifactAdapter, OcrOptions
 from workspace.artifact import Artifact, ArtifactRef, make_artifact_id
 from workspace.errors import (
     ArtifactNotFoundError,
@@ -54,10 +54,14 @@ class ArtifactReader:
         workspace: Workspace | None = None,
         adapters: list[ArtifactAdapter] | None = None,
         max_file_size: int = DEFAULT_MAX_FILE_SIZE,
+        ocr_options: OcrOptions | None = None,
     ):
         self.workspace = workspace
+        self.ocr_options = ocr_options
         self.adapters: list[ArtifactAdapter] = (
-            list(adapters) if adapters is not None else default_adapters()
+            list(adapters)
+            if adapters is not None
+            else default_adapters(ocr_options)
         )
         self.max_file_size = max_file_size
 
@@ -169,16 +173,26 @@ def read_artifact(
     workspace: Workspace | None = None,
     adapters: list[ArtifactAdapter] | None = None,
     max_file_size: int = DEFAULT_MAX_FILE_SIZE,
+    ocr_options: OcrOptions | None = None,
 ) -> Artifact:
     """模块级单一入口（FR-A01）。
 
     workspace=None 时按普通文件路径读取；传入 Workspace 时强制边界检查。
+    ocr_options 用于开启扫描件 OCR（默认关闭，模型仅从本地目录解析）。
     """
     global _default_reader
-    if workspace is None and adapters is None and max_file_size == DEFAULT_MAX_FILE_SIZE:
+    if (
+        workspace is None
+        and adapters is None
+        and ocr_options is None
+        and max_file_size == DEFAULT_MAX_FILE_SIZE
+    ):
         if _default_reader is None:
             _default_reader = ArtifactReader()
         return _default_reader.read_artifact(path_or_ref, mode)
     return ArtifactReader(
-        workspace=workspace, adapters=adapters, max_file_size=max_file_size
+        workspace=workspace,
+        adapters=adapters,
+        max_file_size=max_file_size,
+        ocr_options=ocr_options,
     ).read_artifact(path_or_ref, mode)

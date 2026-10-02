@@ -18,6 +18,21 @@ dependencies = [
 dev = [
     "pytest>=7",
     "fpdf2>=2.7",
+    "xlrd>=2.0",
+    "xlwt>=1.3",
+]
+# 遗留 Office 格式（.xls / .doc）；依赖均由适配器懒加载，缺省时给出明确报错
+legacy = [
+    "xlrd>=2.0",
+    "pywin32>=305; sys_platform == 'win32'",
+]
+# 扫描件 OCR（PaddleOCR / SLANet 表格结构识别）；默认关闭，模型只从本地目录解析
+ocr = [
+    "paddleocr>=3.0",
+    "paddlex>=3.0",
+    "pypdfium2>=4",
+    "pillow>=9",
+    "numpy>=1.24",
 ]
 
 [project.scripts]

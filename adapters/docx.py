@@ -17,6 +17,8 @@ from workspace.artifact import Artifact, ArtifactBlock
 from workspace.errors import EncryptedArtifactError
 
 from .base import ArtifactAdapter, assign_block_ids, ensure_not_ole
+from .tables import ExtractedTable, TableCell, TableRow, table_to_block_metadata
+from .textnorm import collapse_cell_text
 
 _HEADING_NAME_RE = re.compile(r"^(?:heading|标题|標題)\s*(\d+)$", re.IGNORECASE)
 _HEADING_ID_RE = re.compile(r"^(?:heading|标题|標題)(\d+)$", re.IGNORECASE)
@@ -82,6 +84,82 @@ def _paragraph_images(doc, paragraph: Paragraph) -> list[str]:
         if part is not None:
             names.append(str(part.partname))
     return names
+
+
+def _extract_cell_text(cell) -> str:
+    """单元格文本：段落 + 嵌套表格（fce 能力，python-docx 的 cell.text 不含嵌套表格）。
+
+    嵌套表格的行展开成"单元格 | 单元格"的文本行，多行内容以" / "折叠。
+    """
+    from docx.oxml.ns import qn as _qn
+
+    parts: list[str] = []
+    for child in cell._tc:
+        if child.tag == _qn("w:p"):
+            text = collapse_cell_text(Paragraph(child, cell).text)
+            if text:
+                parts.append(text)
+        elif child.tag == _qn("w:tbl"):
+            nested_table = Table(child, cell)
+            nested_rows = [
+                [collapse_cell_text(inner.text) for inner in row.cells]
+                for row in nested_table.rows
+            ]
+            parts.extend(" | ".join(row_values) for row_values in nested_rows)
+    return collapse_cell_text("\n".join(parts))
+
+
+def _table_to_extracted(table: Table, table_index: int) -> ExtractedTable:
+    """把 python-docx 表格转成 ExtractedTable，合并单元格以 tc 元素同一性识别。"""
+    tc_grid = [[cell._tc for cell in row.cells] for row in table.rows]
+    row_count = len(tc_grid)
+    column_count = max((len(row) for row in tc_grid), default=0)
+
+    # 找出每个 tc 的行/列跨度
+    span_info: dict[int, dict] = {}
+    for row_index, row in enumerate(tc_grid):
+        for column_index, tc in enumerate(row):
+            key = id(tc)
+            info = span_info.setdefault(
+                key,
+                {"min_row": row_index, "max_row": row_index, "min_col": column_index, "max_col": column_index},
+            )
+            info["max_row"] = max(info["max_row"], row_index)
+            info["max_col"] = max(info["max_col"], column_index)
+
+    rows: list[TableRow] = []
+    emitted: set[int] = set()
+    for row_index in range(row_count):
+        cells: list[TableCell] = []
+        seen_in_row: set[int] = set()
+        for column_index, tc in enumerate(tc_grid[row_index]):
+            key = id(tc)
+            if key in seen_in_row or key in emitted:
+                continue
+            seen_in_row.add(key)
+            info = span_info[key]
+            anchor = table.cell(info["min_row"], info["min_col"])
+            cells.append(
+                TableCell(
+                    row=info["min_row"] + 1,
+                    column=info["min_col"] + 1,
+                    text=_extract_cell_text(anchor),
+                    rowspan=(info["max_row"] - info["min_row"]) + 1,
+                    colspan=(info["max_col"] - info["min_col"]) + 1,
+                )
+            )
+        cells.sort(key=lambda cell: cell.column)
+        rows.append(TableRow(index=row_index + 1, cells=cells))
+        emitted.update(seen_in_row)
+
+    return ExtractedTable(
+        page=0,
+        table=table_index,
+        rows=rows,
+        column_count=column_count,
+        extraction_method="python-docx",
+        confidence=1.0,
+    )
 
 
 class DocxAdapter(ArtifactAdapter):
@@ -162,9 +240,7 @@ class DocxAdapter(ArtifactAdapter):
             elif child.tag == qn("w:tbl"):
                 table = Table(child, doc)
                 table_index += 1
-                cells = [
-                    [cell.text.strip() for cell in row.cells] for row in table.rows
-                ]
+                extracted_table = _table_to_extracted(table, table_index)
                 counts["table"] += 1
                 blocks.append(
                     ArtifactBlock(
@@ -172,11 +248,7 @@ class DocxAdapter(ArtifactAdapter):
                         "table",
                         None,
                         {"table_index": table_index},
-                        {
-                            "rows": len(cells),
-                            "columns": len(cells[0]) if cells else 0,
-                            "cells": cells,
-                        },
+                        table_to_block_metadata(extracted_table),
                     )
                 )
 

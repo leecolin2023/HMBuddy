@@ -11,8 +11,10 @@ EXPECTED_FIXTURES = {
     "sample.docx",
     "complex.docx",
     "sample.pdf",
+    "sample_table.pdf",
     "sample.xlsx",
     "sample_multisheet.xlsx",
+    "sample.xls",
     "sample.pptx",
 }
 
@@ -49,6 +51,11 @@ def pdf_standard(reader, fixtures_dir):
 
 
 @pytest.fixture(scope="session")
+def pdf_table(reader, fixtures_dir):
+    return reader.read_artifact(fixtures_dir / "sample_table.pdf")
+
+
+@pytest.fixture(scope="session")
 def xlsx_standard(reader, fixtures_dir):
     return reader.read_artifact(fixtures_dir / "sample.xlsx")
 
@@ -56,6 +63,11 @@ def xlsx_standard(reader, fixtures_dir):
 @pytest.fixture(scope="session")
 def xlsx_multisheet(reader, fixtures_dir):
     return reader.read_artifact(fixtures_dir / "sample_multisheet.xlsx")
+
+
+@pytest.fixture(scope="session")
+def xls_standard(reader, fixtures_dir):
+    return reader.read_artifact(fixtures_dir / "sample.xls")
 
 
 @pytest.fixture(scope="session")

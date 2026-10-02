@@ -12,10 +12,26 @@ from pathlib import Path
 from .artifact import ArtifactRef, make_artifact_id
 from .errors import WorkspaceBoundaryError
 
-# 核心验收格式（FR-W02）
-CORE_SUPPORTED_EXTENSIONS = {".docx": "docx", ".pdf": "pdf", ".xlsx": "xlsx", ".pptx": "pptx"}
-# 可选支持格式：允许出现在扫描结果中，但不属于本阶段验收项，也没有对应 Adapter
-OPTIONAL_SUPPORTED_EXTENSIONS = {".txt": "txt", ".md": "md"}
+# 核心支持格式（FR-W02 四类验收格式 + fce 能力融入的扩展格式）
+CORE_SUPPORTED_EXTENSIONS = {
+    ".docx": "docx",
+    ".pdf": "pdf",
+    ".xlsx": "xlsx",
+    ".pptx": "pptx",
+    # 遗留 Office 格式（XlsAdapter / DocLegacyAdapter）
+    ".xls": "xls",
+    ".doc": "doc",
+    # 办公文本格式（TextAdapter，多编码回退）
+    ".txt": "txt",
+    ".md": "md",
+    ".markdown": "md",
+    ".rst": "txt",
+    ".csv": "csv",
+    ".tsv": "csv",
+    ".log": "txt",
+}
+# 保留占位：仅扫描发现、尚无对应 Adapter 的可选格式
+OPTIONAL_SUPPORTED_EXTENSIONS = {}
 
 _TEMP_NAMES = {".ds_store", "desktop.ini", "thumbs.db"}
 _TEMP_SUFFIXES = (".tmp", ".temp", ".crdownload", ".partial")

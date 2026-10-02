@@ -80,6 +80,8 @@ def _render_table(block: ArtifactBlock, max_table_rows: int) -> str:
     header = f"[Table {rows_count}x{columns_count}"
     if where:
         header += " | " + " ".join(where)
+    if block.metadata.get("continues_from_previous"):
+        header += " | 续上一页表格"
     header += "]"
 
     lines = [header]
@@ -87,6 +89,8 @@ def _render_table(block: ArtifactBlock, max_table_rows: int) -> str:
         lines.append("| " + " | ".join(_cell_str(cell) for cell in row) + " |")
     if len(rows) > max_table_rows:
         lines.append(f"...（表格共 {len(rows)} 行，已截断显示前 {max_table_rows} 行）")
+    if block.metadata.get("continued_on_next"):
+        lines.append("（表格在下一页继续）")
     return "\n".join(lines)
 
 

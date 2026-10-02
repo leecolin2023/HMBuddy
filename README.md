@@ -12,6 +12,12 @@ HMBuddy 是一个面向企业内网、可离线运行的办公助手项目。
 Phase 2 规格说明：
 [requirements/phase-2-desktop-entry-v0.1.md](./requirements/phase-2-desktop-entry-v0.1.md)
 
+Phase 1 规格说明：
+[requirements/phase-1-local-office-artifact-runtime-v0.1.md](./requirements/phase-1-local-office-artifact-runtime-v0.1.md)
+历史文件提取工具 fce 的核心能力已拆解融入 `adapters/`（见"能力来源"）：
+支持格式扩展到 XLS / DOC / TXT / MD / CSV 等，PDF 增加矢量表格引擎（合并单元格、
+跨页续表）与可选 OCR，详见下文。
+
 ---
 
 ## 1. 桌面端快速开始
@@ -45,6 +51,25 @@ start_hmbuddy_desktop.bat
 6. 配置模型后，对当前已读取文件直接提问；
 7. 文件解析与模型请求在后台线程运行，避免冻结 Tk 主线程。
 
+### 可选依赖组（fce 能力融入后新增）
+
+```bash
+pip install -e ".[legacy]"   # .xls/.doc 遗留格式（xlrd + pywin32；缺省时适配器给出明确报错）
+pip install -e ".[ocr]"      # 扫描件 OCR（paddleocr/paddlex/pypdfium2；默认关闭）
+```
+
+OCR 模型只从**本地目录**解析（`HMBUDDY_MODEL_DIR` / `FCE_MODEL_DIR` 环境变量，或项目根 `./models/`），**绝不隐式下载**（沿用 fce/AGENTS.md 边界）。代码中开启方式：
+
+```python
+from adapters.base import OcrOptions
+from services.artifact_reader import read_artifact
+
+artifact = read_artifact(
+    "扫描件.pdf",
+    ocr_options=OcrOptions(enable_ocr=True, enable_table_ocr=True),
+)
+```
+
 ---
 
 ## 2. LLM 配置
@@ -76,9 +101,12 @@ python -m desktop.app
 CLI 继续用于调试、Eval 和无 GUI 环境。
 
 ```bash
+python -m pytest -q                                            # 全部 Eval（120 项）
+
 python app.py evals/fixtures/sample.docx --no-llm
-python app.py evals/fixtures/sample.xlsx --show-context
-python app.py evals/fixtures --scan
+python app.py evals/fixtures/sample_table.pdf --show-context   # 矢量表格 + 跨页续表
+python app.py evals/fixtures/sample.xls --no-llm               # 遗留 .xls
+python app.py evals/fixtures --scan                            # 扫描目录
 ```
 
 配置 LLM 后：
@@ -105,6 +133,8 @@ python app.py evals/fixtures/sample.docx
                  ┌──────────────▼───────────────┐
                  │ Artifact Service (services/) │
                  │ read_artifact()              │
+                 │ （OCR 经 OcrOptions 传入，   │
+                 │   默认关闭）                 │
                  └──────────────┬───────────────┘
                                 │
              ┌──────────────────┴──────────────────┐
@@ -117,8 +147,8 @@ python app.py evals/fixtures/sample.docx
              └──────────────┬──────────────────────┘
                             │
           ┌─────────────────▼─────────────────┐
-          │ Adapter Router                    │
-          │ DOCX / PDF / XLSX / PPTX          │
+          │ Adapter Router (adapters/)        │
+          │ DOCX DOC PDF XLSX XLS PPTX TXT... │
           └─────────────────┬─────────────────┘
                             │
                     Local Filesystem
@@ -133,6 +163,25 @@ Phase 2 的设计原则是：**Desktop 只是薄应用层，不复制 Phase 1 Ru
 - 问答来自 `client.ask(artifact, question)`；
 - UI 不直接调用具体格式 Adapter。
 
+Phase 1 的设计原则（规格第 5 节）：
+
+- **P2 格式隔离**：`if suffix == ".docx"` 这类判断只存在于 Adapter 层，上层（含 Context 渲染）只面向 `block_type` 工作；
+- **P3 Artifact 是统一核心对象**：所有格式进入上层后都是 `Artifact`；
+- **P4 保留结构不过早统一**：统一顶层模型 + 格式特有的 Block 结构。
+
+### 能力来源（fce 拆解融入）
+
+| fce 原有能力 | 现位置 |
+|---|---|
+| 矢量线表格引擎（连通分量、union-find 合并单元格、表头识别、重复表头面板拆分、跨页续表链接） | `adapters/pdf_tables.py`（几何采集层改用 pdfplumber 原语，算法保真移植） |
+| 表格契约（rowspan/colspan/bbox/置信度/续表链） | `adapters/tables.py` |
+| OCR 管线（懒加载 PaddleOCR、超大图分片、后处理规范化、SLANet 表格结构识别） | `adapters/ocr/` |
+| 多编码纯文本解析 | `adapters/text.py` |
+| .xls（xlrd/COM）、.doc（Word/WPS COM） | `adapters/xls.py`、`adapters/doc_legacy.py` |
+| DOCX 嵌套表格、单元格文本/数值规范化 | `adapters/docx.py`、`adapters/textnorm.py` |
+
+未移植：excel/json/markdown 输出器、GUI、doctor、benchmark（输出与工具类，超出 adapters 只读范围，按真实需要再引入）。fce/ 目录已从工作区移除，融入的代码保留了原实现的行为与边界注释。
+
 ---
 
 ## 5. 目录结构
@@ -144,11 +193,14 @@ desktop/                     Phase 2 桌面应用层
   app.py                     Tkinter 页面、事件、后台线程
   presenter.py               Artifact → UI 文本格式化
 workspace/                   Workspace、ArtifactRef、Artifact/ArtifactBlock、错误类型
-adapters/                    DOCX / PDF / XLSX / PPTX 适配器
+adapters/                    适配层（7 个适配器 + 表格契约 + OCR 子包 + 规范化）
+  adapters/pdf_tables.py     PDF 矢量线表格引擎
+  adapters/ocr/              PaddleOCR / SLANet 表格结构识别（懒加载、默认关闭）
 services/                    ArtifactReader：read_artifact() 单一入口
 llm/                         artifact_to_context() + OpenAI 兼容客户端
-evals/                       Parser / Context / QA Eval + baseline
-tests/                       单元测试
+evals/                       Parser / 表格 / 文本 / OCR / Context / QA Eval + baseline
+evals/fixtures/              8 个标准测试样例（已提交，生成脚本 generate_fixtures.py）
+tests/                       领域模型 / 错误类型 / Workspace / 桌面 presenter 单元测试
 requirements/                分阶段需求规格说明书
 start_hmbuddy_desktop.bat    Windows 双击启动入口
 ```
@@ -159,11 +211,11 @@ start_hmbuddy_desktop.bat    Windows 双击启动入口
 
 给定一个本地工作目录，系统可以：
 
-1. **发现**目录中的 DOCX / PDF / XLSX / PPTX；
-2. 统一通过 `read_artifact()` 读取任意支持格式；
-3. **保留结构**，而不是把文件压成一大段纯文本；
+1. **发现**目录中的 DOCX / PDF / XLSX / XLS / PPTX / DOC / TXT / MD / CSV 等格式（过滤临时、隐藏、不支持文件）；
+2. 统一通过 `read_artifact()` 读取任意支持格式，格式路由在内部完成；
+3. **保留结构**（标题层级、表格网格与合并单元格、单元格公式、页码/页归属、幻灯片顺序、跨页续表），而不是把文件压成一大段纯文本；
 4. 将 Artifact 渲染成对 LLM 友好的 Context；
-5. 在用户明确指定文件的前提下完成内容问答。
+5. 在用户明确指定文件的前提下完成内容问答（可选：对无文本层扫描件执行 OCR）。
 
 关键接口：
 
@@ -172,21 +224,46 @@ from workspace.workspace import Workspace
 from services.artifact_reader import read_artifact
 from llm.context import artifact_to_context
 
-refs = Workspace("D:/工作目录").list_artifacts()
-artifact = read_artifact("报表.xlsx")
+# 1. 发现（G1）
+refs = Workspace("D:/工作目录").list_artifacts()   # -> list[ArtifactRef]
+
+# 2. 读取（G2/G3）：上层不感知格式差异
+artifact = read_artifact("报表.xlsx")              # 也接受 ArtifactRef
+artifact.blocks            # heading/paragraph/table/text_block/textbox/slide...
+artifact.provenance        # adapter / read_at / parse_duration_ms / file_sha256 ...
+
+# 3. 交给 LLM（G4）
 context = artifact_to_context(artifact)
 ```
 
-Phase 1 规格：
-[requirements/phase-1-local-office-artifact-runtime-v0.1.md](./requirements/phase-1-local-office-artifact-runtime-v0.1.md)
+表格 block 的 metadata 统一携带：`cells`（span 展开网格）、`cells_merged`（合并锚点，rowspan/colspan）、`extraction_method`、`confidence`、`repeated_header_row`、`continuation_id` / `continues_from_previous` / `continued_on_next`（PDF 跨页续表）。
+
+错误类型（规格第 18 节）：
+
+| 错误 | 场景 |
+|---|---|
+| `UnsupportedArtifactTypeError` | 不支持的格式（ER-01） |
+| `ArtifactNotFoundError` | 文件不存在 |
+| `WorkspaceBoundaryError` | 路径逃逸 Workspace 根目录（ER-05） |
+| `ArtifactTooLargeError` | 超过大小阈值，默认 50 MB，可配置（ER-04） |
+| `ArtifactParseError` | 文件损坏等解析失败，记录 adapter 与原始错误（ER-02） |
+| `EncryptedArtifactError` | 加密 / 密码保护 / OLE 魔数（ER-03） |
 
 ---
 
 ## 7. 测试
 
 ```bash
-python -m pytest -q
+python -m pytest -q                                   # 全部 Eval（120 项）
+python evals/fixtures/generate_fixtures.py            # 重新生成测试样例
 ```
+
+- Parser Eval：8 个样例 100% 无异常读取；
+- 表格 Eval：矢量网格重建、表头识别、跨页续表链接、DOCX 合并/嵌套表格；
+- OCR Eval：分片/行分组/后处理规则（纯逻辑，无需 paddle 环境）+ 模型缺失降级；
+- Context Eval：问题所需事实必须进入 Context（区分 Parser Error 与 Context Error）；
+- QA Eval：配置 LLM 环境变量后运行真实问答（关键词校验）；
+- Baseline：[evals/baseline-phase1-v0.2.json](./evals/baseline-phase1-v0.2.json)（v0.1 为 fce 融入前记录）。
 
 桌面层新增的格式化逻辑放在 `desktop.presenter`，可以在无 GUI 环境下测试。
 
@@ -202,7 +279,7 @@ GUI 最小 Smoke Test：
 
 ---
 
-## 8. 当前边界
+## 8. 当前边界与已知限制
 
 当前仍然是 **Human-in-the-loop**，明确不做：
 
@@ -214,5 +291,7 @@ GUI 最小 Smoke Test：
 - Word / Excel / PPT 写回；
 - 自动覆盖原文件；
 - 任务持久化与中断恢复。
+
+已知限制（完整清单见 baseline JSON 的 `known_limitations`）：openpyxl 生成的公式样例没有计算缓存；PDF 表格需要几何边框线（无线表格回退 pdfplumber）；.doc 只能取纯文本；OCR 默认关闭且模型需本地放置；CSV 按纯文本读取。
 
 这些能力是否进入下一阶段，由桌面入口投入真实使用后出现的失败模式决定，而不是为了凑完整 Agent 架构提前实现。

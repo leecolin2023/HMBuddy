@@ -65,7 +65,7 @@ def make_docx_standard(path: Path) -> None:
 
 
 def make_docx_complex(path: Path) -> None:
-    """复杂 DOCX：三级标题、两个表格、编号列表、图片（TC-DOCX-01 补充）。"""
+    """复杂 DOCX：三级标题、两个普通表格 + 一个合并单元格表格 + 嵌套表格（TC-DOCX-01 补充）。"""
     from docx import Document
     from docx.shared import Inches
 
@@ -100,17 +100,30 @@ def make_docx_complex(path: Path) -> None:
             table1.rows[row_index].cells[col_index].text = cell_text
 
     doc.add_heading("四、风险与对策", level=1)
-    table2 = doc.add_table(rows=3, cols=2)
+    table2 = doc.add_table(rows=3, cols=3)
     table2.style = "Table Grid"
-    for row_index, row_data in enumerate(
-        [
-            ["风险", "对策"],
-            ["扫描版 PDF", "标记 requires_ocr，暂不 OCR"],
-            ["超大表格", "截断并标注"],
-        ]
-    ):
-        for col_index, cell_text in enumerate(row_data):
-            table2.rows[row_index].cells[col_index].text = cell_text
+    # 表头第一行前两列合并（colspan=2，用于验证合并单元格识别）
+    merged_header = table2.cell(0, 0).merge(table2.cell(0, 1))
+    merged_header.text = "风险类别"
+    table2.cell(0, 2).text = "应对策略"
+    table2.cell(1, 0).text = "扫描版 PDF"
+    table2.cell(1, 1).text = "无文本层"
+    table2.cell(1, 2).text = "标记 requires_ocr，暂不 OCR"
+    table2.cell(2, 0).text = "超大表格"
+    table2.cell(2, 1).text = "渲染溢出"
+    table2.cell(2, 2).text = "截断并标注"
+
+    doc.add_heading("五、嵌套结构示例", level=1)
+    outer_table = doc.add_table(rows=1, cols=1)
+    outer_table.style = "Table Grid"
+    outer_cell = outer_table.cell(0, 0)
+    outer_cell.text = "以下为部门联系人嵌套表格："
+    inner_table = outer_cell.add_table(rows=2, cols=2)
+    inner_table.style = "Table Grid"
+    inner_table.cell(0, 0).text = "姓名"
+    inner_table.cell(0, 1).text = "电话"
+    inner_table.cell(1, 0).text = "张伟"
+    inner_table.cell(1, 1).text = "13800000000"
 
     doc.add_paragraph("以上风险在第一阶段以标注和截断方式处理，不引入复杂管线。")
     doc.add_picture(io.BytesIO(PNG_1PX), width=Inches(1))
@@ -277,13 +290,75 @@ def make_pptx_standard(path: Path) -> None:
     prs.save(str(path))
 
 
+def make_pdf_table(path: Path) -> None:
+    """带边框表格的 PDF：第 1 页表头 + 2 行数据，第 2 页同表头续表（跨页续表验证）。
+
+    用描边矩形画单元格边框（Word/Excel 导出 PDF 的常见做法），供矢量表格
+    引擎从几何线条重建表格。
+    """
+    from fpdf import FPDF
+
+    pdf = FPDF(format="A4")
+    pdf.set_title("部门季度费用明细表")
+    font_path = _find_cjk_ttf()
+    if font_path is None:
+        raise RuntimeError("no CJK TTF font found for PDF fixture generation")
+    pdf.add_font("hmbuddycjk", "", font_path)
+    pdf.set_font("hmbuddycjk", size=12)
+    pdf.set_line_width(0.2)
+
+    col_x = [20.0, 80.0, 130.0, 180.0]  # 三列：宽 60 / 50 / 50
+    row_height = 12.0
+
+    def draw_table_row(top: float, values: list[str]) -> None:
+        for column_index, (x0, x1) in enumerate(zip(col_x[:-1], col_x[1:])):
+            pdf.rect(x0, top, x1 - x0, row_height, style="D")
+            pdf.text(x0 + 2.0, top + row_height - 3.5, values[column_index])
+
+    # 第 1 页：标题 + 表头 + 两行数据
+    pdf.add_page()
+    pdf.text(20, 20, "部门季度费用明细表")
+    draw_table_row(30.0, ["项目", "2024", "2025"])
+    draw_table_row(30.0 + row_height, ["营业收入", "1200", "1500"])
+    draw_table_row(30.0 + 2 * row_height, ["营业成本", "800", "900"])
+    pdf.text(20, 80, "注：本表在第 2 页继续。")
+
+    # 第 2 页：同表头续表 + 两行数据
+    pdf.add_page()
+    draw_table_row(20.0, ["项目", "2024", "2025"])
+    draw_table_row(20.0 + row_height, ["毛利润", "400", "600"])
+    draw_table_row(20.0 + 2 * row_height, ["净利润", "350", "520"])
+    pdf.output(str(path))
+
+
+def make_xls_standard(path: Path) -> None:
+    """标准 XLS（xlwt 生成）：单 Sheet、数值、合并单元格（遗留格式验证）。"""
+    import xlwt
+
+    workbook = xlwt.Workbook()
+    sheet = workbook.add_sheet("部门费用")
+    for column_index, header in enumerate(["项目", "2024", "2025"]):
+        sheet.write(0, column_index, header)
+    sheet.write(1, 0, "营业收入")
+    sheet.write(1, 1, 1200)
+    sheet.write(1, 2, 1500)
+    sheet.write(2, 0, "营业成本")
+    sheet.write(2, 1, 800)
+    sheet.write(2, 2, 900)
+    sheet.write(4, 0, "注：数据为示例数据")
+    sheet.merge(4, 4, 0, 2)
+    workbook.save(str(path))
+
+
 def main() -> None:
     generators = {
         "sample.docx": make_docx_standard,
         "complex.docx": make_docx_complex,
         "sample.pdf": make_pdf_standard,
+        "sample_table.pdf": make_pdf_table,
         "sample.xlsx": make_xlsx_standard,
         "sample_multisheet.xlsx": make_xlsx_multisheet,
+        "sample.xls": make_xls_standard,
         "sample.pptx": make_pptx_standard,
     }
     for filename, generator in generators.items():
