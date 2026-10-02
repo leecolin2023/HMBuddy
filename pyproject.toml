@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "hmbuddy"
-version = "0.1.0"
-description = "HMBuddy Phase 1 — Local Office Artifact Runtime（本地 Office 文件统一读取运行时）"
+version = "0.2.0"
+description = "HMBuddy — Local Office Artifact Runtime with Desktop Entry"
 requires-python = ">=3.10"
 dependencies = [
     "python-docx>=1.1",
@@ -20,8 +20,11 @@ dev = [
     "fpdf2>=2.7",
 ]
 
+[project.scripts]
+hmbuddy-desktop = "desktop.app:main"
+
 [tool.setuptools]
-packages = ["workspace", "adapters", "services", "llm"]
+packages = ["workspace", "adapters", "services", "llm", "desktop"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests", "evals"]
