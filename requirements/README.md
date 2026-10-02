@@ -43,4 +43,4 @@
 - [Phase 2 — Desktop Entry & Human-in-the-loop Workspace V0.1](./phase-2-desktop-entry-v0.1.md)
 - [Phase 2.1 — Desktop Application Foundation V0.1](./phase-2.1-desktop-application-foundation-v0.1.md)
 
-> Phase 1 / 1.1 / 1.1.1 已形成 Workspace、Artifact 和 File Capability Runtime 基础；Phase 2 建立 Desktop Entry；Phase 2.1 聚焦应用状态层。后续进入 Minimal Agent Kernel、Office Primitive Tools、Artifact Write / Version / Diff、Skills 与 Extensions 时，必须优先遵守架构总纲，而不是为每个 WorkBuddy 式产品功能新建独立 Engine。
+> Phase 1 / 1.1 / 1.1.1 已形成 Workspace、Artifact 和 File Capability Runtime 基础；Phase 2 建立 Desktop Entry；重构后的 Phase 2.1 只建设 Home、Config、AppState、Recent Workspace / Activity、Plugin Manager 与 Settings，不提前建立 RecentTaskEntry、Session、TaskEngine、AgentLoop、ToolRegistry 或 ExtensionHost。Phase 2.1 完成后，再按架构总纲进入 Minimal Agent Kernel。
