@@ -298,12 +298,13 @@ class HMBuddyDesktopApp:
 
     def load_selected_artifact(self) -> None:
         ref = self._selected_ref()
-        if ref is None:
+        workspace = self.workspace
+        if ref is None or workspace is None:
             return
         self._set_busy(True, f"正在读取 {ref.name}…")
 
         def work():
-            return read_artifact(ref)
+            return read_artifact(ref, workspace=workspace)
 
         def done(artifact) -> None:
             self.current_artifact = artifact
