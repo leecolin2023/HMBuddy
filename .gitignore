@@ -41,3 +41,7 @@ obj/
 coverage/
 .nyc_output/
 .pytest_cache/
+
+# Python 构建
+*.egg-info/
+.smoke-venv/

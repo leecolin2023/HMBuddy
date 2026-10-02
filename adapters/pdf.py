@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pdfplumber
 
-from workspace.artifact import Artifact, ArtifactBlock
+from workspace.artifact import Artifact, ArtifactBlock, ArtifactLocator
 
 from .base import ArtifactAdapter, OcrOptions, assign_block_ids
 from .pdf_tables import (
@@ -92,6 +92,10 @@ class PdfAdapter(ArtifactAdapter):
                                     "x0": round(float(line.get("x0", 0.0)), 2),
                                     "top": round(float(line.get("top", 0.0)), 2),
                                 },
+                                locator=ArtifactLocator(
+                                    "pdf",
+                                    {"page": page_number, "line_index": line_index},
+                                ),
                             ),
                         )
                     )
@@ -121,6 +125,10 @@ class PdfAdapter(ArtifactAdapter):
                                     ),
                                 },
                                 table_to_block_metadata(table),
+                                locator=ArtifactLocator(
+                                    "pdf",
+                                    {"page": page_number, "table_index": table.table},
+                                ),
                             ),
                         )
                     )
@@ -149,6 +157,7 @@ class PdfAdapter(ArtifactAdapter):
                                         for img in images
                                     ],
                                 },
+                                locator=ArtifactLocator("pdf", {"page": page_number}),
                             ),
                         )
                     )
@@ -332,6 +341,13 @@ class PdfAdapter(ArtifactAdapter):
                                             min(box.box[0] for box in row_boxes), 2
                                         ),
                                     },
+                                    locator=ArtifactLocator(
+                                        "pdf",
+                                        {
+                                            "page": page_number,
+                                            "line_index": line_index,
+                                        },
+                                    ),
                                 )
                             )
                             line_index += 1
@@ -366,6 +382,10 @@ class PdfAdapter(ArtifactAdapter):
                                 None,
                                 {"page": table.page, "table_index": table.table},
                                 table_to_block_metadata(table),
+                                locator=ArtifactLocator(
+                                    "pdf",
+                                    {"page": table.page, "table_index": table.table},
+                                ),
                             )
                         )
 

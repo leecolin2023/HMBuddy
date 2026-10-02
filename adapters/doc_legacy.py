@@ -2,13 +2,16 @@
 
 仅产出段落级结构（.doc 二进制格式无法无损提取标题层级）；
 依赖 pywin32 + 本机 Word/WPS，缺失时返回带明确提示的解析错误。
+
+Phase 1.1.1（BUG-001）：进入 COM 前必须通过 permission gate 申请 office.com，
+默认 Policy（只授予 filesystem.read）下不得实际启动 Word/WPS。
 """
 from __future__ import annotations
 
 import os
 from pathlib import Path
 
-from workspace.artifact import Artifact, ArtifactBlock
+from workspace.artifact import Artifact, ArtifactBlock, ArtifactLocator
 from workspace.errors import ArtifactParseError
 
 from .base import ArtifactAdapter, assign_block_ids
@@ -18,6 +21,14 @@ class DocLegacyAdapter(ArtifactAdapter):
     artifact_type = "doc"
     supported_extensions = (".doc",)
     parser_library = "pywin32 (Word/WPS COM)"
+
+    def __init__(self, ocr_options=None):
+        super().__init__(ocr_options)
+        self._permission_gate = None
+
+    def set_permission_gate(self, gate) -> None:
+        """由 Provider 在每次 execute 前注入（BUG-001 动态权限受控接口）。"""
+        self._permission_gate = gate
 
     def read(self, path: Path, artifact_id: str) -> Artifact:
         if os.name != "nt":
@@ -35,7 +46,14 @@ class DocLegacyAdapter(ArtifactAdapter):
             if not line:
                 continue
             blocks.append(
-                ArtifactBlock("", "paragraph", line, {"line_index": line_index}, {})
+                ArtifactBlock(
+                    "",
+                    "paragraph",
+                    line,
+                    {"line_index": line_index},
+                    {},
+                    locator=ArtifactLocator("doc", {"line_index": line_index}),
+                )
             )
             line_index += 1
 
@@ -54,8 +72,10 @@ class DocLegacyAdapter(ArtifactAdapter):
             file_stat=path.stat(),
         )
 
-    @staticmethod
-    def _read_via_com(path: Path) -> tuple[str, str]:
+    def _read_via_com(self, path: Path) -> tuple[str, str]:
+        # BUG-001：进入 COM 前必须通过权限 gate，未授权不得启动 Word/WPS
+        if self._permission_gate is not None:
+            self._permission_gate("office.com")
         try:
             import win32com.client as win32  # type: ignore
         except ImportError as exc:

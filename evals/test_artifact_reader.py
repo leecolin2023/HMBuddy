@@ -57,10 +57,24 @@ def test_provenance_complete(reader, fixtures_dir, filename):
 def test_read_by_ref_uses_ref_artifact_id(fixtures_dir):
     workspace = Workspace(fixtures_dir)
     ref = next(r for r in workspace.list_artifacts() if r.name == "sample.docx")
-    artifact = read_artifact(ref)
+    artifact = read_artifact(ref, workspace=workspace)
     assert artifact.artifact_id == ref.artifact_id
     assert artifact.path == ref.path
     assert artifact.artifact_id == make_artifact_id(ref.path)
+
+
+def test_workspace_ref_cannot_escape_trust_domain(fixtures_dir):
+    """BUG-007 / AC-H07：Workspace Ref 脱离原 Workspace 时必须拒绝。"""
+    workspace = Workspace(fixtures_dir)
+    ref = next(r for r in workspace.list_artifacts() if r.name == "sample.docx")
+    with pytest.raises(WorkspaceBoundaryError, match="workspace trust boundary"):
+        read_artifact(ref)  # 未提供原 Workspace
+    # 换一个 Workspace 也不行（信任域不匹配）
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as other_root:
+        with pytest.raises(WorkspaceBoundaryError):
+            read_artifact(ref, workspace=Workspace(other_root))
 
 
 def test_unsupported_type(tmp_path):

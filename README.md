@@ -6,14 +6,20 @@ HMBuddy 是一个面向企业内网、可离线运行的办公助手项目。
 
 - **Phase 1：Local Office Artifact Runtime**  
   稳定发现并统一读取 DOCX / PDF / XLSX / PPTX，保留必要结构并转成 Artifact。
+- **Phase 1.1：Pluggable File Capability Runtime**  
+  文件能力从静态 Adapter 集合升级为可发现、可注册、可替换的插件运行时。
+- **Phase 1.1.1：Plugin Runtime Contract Hardening**  
+  收口 1.1 审阅发现的 17 项缺陷：权限强阻断、Capability Catalog、Manifest 权威、
+  Workspace 信任域、可用性路由、ArtifactLocator、Context 默认预算、外部插件
+  package 支持、CI 安装态验证。
 - **Phase 2：Desktop Entry & Human-in-the-loop Workspace**  
   在 Phase 1 运行时之上增加桌面入口，让用户可以选择工作区、选择文件、读取结构摘要，并在已配置模型时直接问答。
 
-Phase 2 规格说明：
-[requirements/phase-2-desktop-entry-v0.1.md](./requirements/phase-2-desktop-entry-v0.1.md)
-
-Phase 1 规格说明：
-[requirements/phase-1-local-office-artifact-runtime-v0.1.md](./requirements/phase-1-local-office-artifact-runtime-v0.1.md)
+规格说明：
+[Phase 1](./requirements/phase-1-local-office-artifact-runtime-v0.1.md) ·
+[Phase 1.1](./requirements/phase-1.1-pluggable-file-capability-runtime-v0.1.md) ·
+[Phase 1.1.1](./requirements/phase-1.1.1-plugin-runtime-contract-hardening-v0.1.md) ·
+[Phase 2](./requirements/phase-2-desktop-entry-v0.1.md)
 历史文件提取工具 fce 的核心能力已拆解融入 `adapters/`（见"能力来源"）：
 支持格式扩展到 XLS / DOC / TXT / MD / CSV 等，PDF 增加矢量表格引擎（合并单元格、
 跨页续表）与可选 OCR，详见下文。
@@ -101,7 +107,7 @@ python -m desktop.app
 CLI 继续用于调试、Eval 和无 GUI 环境。
 
 ```bash
-python -m pytest -q                                            # 全部 Eval（120 项）
+python -m pytest -q                                            # 全部 Eval（数量以 baseline 为准）
 
 python app.py evals/fixtures/sample.docx --no-llm
 python app.py evals/fixtures/sample_table.pdf --show-context   # 矢量表格 + 跨页续表
@@ -181,6 +187,18 @@ Artifact（Core Contract，provenance 增加 plugin_id / provider_id / plugin_ve
 - 单插件加载失败被隔离记录，不影响其他插件；fallback 全程可观察（trace 记录 `fallback_from`）；
 - 权限是 Runtime Policy 而非 OS 沙箱：默认只授予 `filesystem.read`，声明与授权可列出观察；
 - Context Hardening：全局字符/块预算、XLSX 解析期截断可见、PDF 页级 OCR 标记、绝对路径默认不进入 LLM Context。
+
+### 契约加固（Phase 1.1.1）
+
+在 1.1 机制层之上收口治理层与 Workspace 集成层（规格：[requirements/phase-1.1.1-plugin-runtime-contract-hardening-v0.1.md](./requirements/phase-1.1.1-plugin-runtime-contract-hardening-v0.1.md)）：
+
+- **权限强阻断（BUG-001）**：Provider 声明 `required_permissions`，Runtime 在 execute 前强校验；`context.require_permission()` 提供动态权限接口（XLS 的 xlrd 路径只需 `filesystem.read`，COM fallback 前必须申请 `office.com`）；默认 Policy 下 `.doc` 不会实际启动 Word/WPS。
+- **Capability Catalog（BUG-002）**：Workspace 支持格式从 Registry 派生，安装全新扩展名（如 `.foo`）的插件后 Workspace 自动发现并可读取，全程不改 Core。
+- **Manifest 权威（BUG-003/004）**：plugin_id/version/priority/extensions/permissions 由 Loader 从 Manifest 强制注入 Provider；Registry 只注册 Loader 校验过的同一批 Provider 实例。
+- **Ref 信任域（BUG-007）**：Workspace 生成的 ArtifactRef 携带 `workspace_id`，脱离原 Workspace 读取会被拒绝。
+- **可用性路由（BUG-008）**：Manifest platforms / python_requires / 依赖探针真实参与路由，不满足的 Provider 报 `ProviderNotAvailableError` 并给出原因。
+- **ArtifactLocator（BUG-009）**：`ArtifactBlock.locator` 进入核心契约，四种格式按 scheme 生成稳定定位；`location` 仅为兼容保留。
+- **其他**：`success=False` 强制转为失败（BUG-010）、选择阶段异常可诊断（BUG-011）、fallback 显式 allowlist（BUG-012）、外部插件支持标准 package 与相对 import（BUG-013）、删除静态 `ARTIFACT_TYPES`（BUG-014）、trace 时间正确且有界（BUG-015）、GitHub Actions 覆盖 3.10/3.12 × Windows/Linux + wheel 安装态 smoke（BUG-017）。
 
 例如：
 
@@ -289,7 +307,7 @@ context = artifact_to_context(artifact)
 ## 7. 测试
 
 ```bash
-python -m pytest -q                                   # 全部 Eval（185 项）
+python -m pytest -q                                   # 全部 Eval（数量以 baseline 为准）
 python evals/fixtures/generate_fixtures.py            # 重新生成测试样例
 ```
 
@@ -298,8 +316,9 @@ python evals/fixtures/generate_fixtures.py            # 重新生成测试样例
 - OCR Eval：分片/行分组/后处理规则（纯逻辑，无需 paddle 环境）+ 模型缺失降级；
 - Context Eval：问题所需事实必须进入 Context（区分 Parser Error 与 Context Error）；
 - 插件化 Eval：Manifest 校验（T1）、发现/加载/故障隔离（T2/T7）、Registry priority（T3/AC-05）、路由（T4/AC-01/02）、权限（T8/AC-07）、fallback trace、外部 Markdown 插件验收（T6/AC-04）、Context Hardening（T9）；
+- 1.1.1 加固 Eval：权限强阻断、`.foo` 全新扩展名全链路、Manifest 权威、Provider 单次物化、external_plugin_dirs 直连、默认 Context 预算、Ref 信任域、可用性路由、Locator、success 语义、选择诊断、fallback allowlist、package 插件；
 - QA Eval：配置 LLM 环境变量后运行真实问答（关键词校验）；
-- Baseline：[evals/baseline-phase1.1-v0.1.json](./evals/baseline-phase1.1-v0.1.json)（历史：phase1-v0.1 / phase1-v0.2）。
+- Baseline：[evals/baseline-phase1.1.1-v0.1.json](./evals/baseline-phase1.1.1-v0.1.json)（当前；历史 phase1.1 / phase1-v0.1 / v0.2 见同目录）。
 
 桌面层新增的格式化逻辑放在 `desktop.presenter`，可以在无 GUI 环境下测试。
 

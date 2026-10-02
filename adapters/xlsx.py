@@ -11,7 +11,7 @@ from pathlib import Path
 import openpyxl
 from openpyxl.utils import get_column_letter
 
-from workspace.artifact import Artifact, ArtifactBlock
+from workspace.artifact import Artifact, ArtifactBlock, ArtifactLocator
 from workspace.errors import EncryptedArtifactError
 
 from .base import ArtifactAdapter, assign_block_ids, ensure_not_ole
@@ -100,6 +100,9 @@ class XlsxAdapter(ArtifactAdapter):
                         "columns_truncated": real_max_col > max_col,
                         "cells_truncated": cells_truncated,
                     },
+                    locator=ArtifactLocator(
+                        "xlsx", {"sheet": sheet_name, "range": dimensions}
+                    ),
                 )
             )
             sheets_meta.append(

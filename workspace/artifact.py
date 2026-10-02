@@ -1,17 +1,11 @@
-"""Phase 1 核心领域对象（规格第 8 节）：ArtifactRef / Artifact / ArtifactBlock。
-
-Artifact 是统一核心对象（P3）：DOCX/PDF/XLSX/PPTX 进入上层后都表现为 Artifact。
-内部模型面向程序；面向 LLM 的表示见 llm/context.py，两者不混为一个对象（P4）。
-"""
+"""Phase 1.1.1 修订：ArtifactLocator 是核心契约（规格 BUG-009），
+定义在本模块供插件与 plugin_runtime 共同使用；ArtifactBlock 增加 locator 字段。"""
 from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-
-# 第一阶段核心支持格式（FR-W02）
-ARTIFACT_TYPES = {"docx", "pdf", "xlsx", "pptx"}
 
 
 def make_artifact_id(path: str | Path) -> str:
@@ -24,9 +18,31 @@ def make_artifact_id(path: str | Path) -> str:
     return f"a_{digest[:16]}"
 
 
+def make_workspace_id(root_path: str | Path) -> str:
+    """由 Workspace 根目录生成稳定 ID，用于 ArtifactRef 信任域标记（BUG-007）。"""
+    digest = hashlib.sha256(str(Path(root_path).resolve()).encode("utf-8")).hexdigest()
+    return f"ws_{digest[:12]}"
+
+
+@dataclass
+class ArtifactLocator:
+    """格式特有的稳定定位描述（规格第 13 节 / BUG-009）。
+
+    Core 只保存和传递 Locator，解释权归对应格式插件所有；
+    block_id 只是解析顺序 ID，不承担跨版本定位职责。
+    """
+
+    scheme: str
+    data: dict = field(default_factory=dict)
+
+
 @dataclass
 class ArtifactRef:
-    """表达"存在一个文件"，尚未读取正文（规格 8.2）。"""
+    """表达"存在一个文件"，尚未读取正文（规格 8.2）。
+
+    workspace_id 标记信任域（BUG-007）：由 Workspace 生成的 Ref 必须在
+    原 Workspace（或同信任域 Workspace）内才能读取。
+    """
 
     artifact_id: str
     name: str
@@ -35,15 +51,19 @@ class ArtifactRef:
     size: int
     modified_at: datetime
     artifact_type: str
+    workspace_id: str | None = None
+    relative_path: str | None = None
 
 
 @dataclass
 class ArtifactBlock:
-    """所有文件内部内容的统一表达单元（规格 8.4）。
+    """所有文件内部内容的统一表达单元（规格 8.4 + BUG-009）。
 
     block_type 例如：heading / paragraph / list_item / table / image_reference /
     text_block / textbox / slide。
     text 面向文本型内容；表格等结构化内容放在 metadata（如 cells 网格）。
+    locator 是格式插件生成的稳定定位（可跨版本解释）；location 仅为
+    兼容/展示保留的解析期信息。
     """
 
     block_id: str
@@ -51,6 +71,7 @@ class ArtifactBlock:
     text: str | None = None
     location: dict = field(default_factory=dict)
     metadata: dict = field(default_factory=dict)
+    locator: ArtifactLocator | None = None
 
 
 @dataclass

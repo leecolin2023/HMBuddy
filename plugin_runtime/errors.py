@@ -44,15 +44,43 @@ class CapabilityNotFoundError(PluginRuntimeError):
 
 
 class ProviderNotAvailableError(PluginRuntimeError):
-    """有 Provider 但当前环境不可用（ER-P02）。"""
+    """有 Provider 但当前环境不可用（ER-P02 / BUG-008），附带可诊断原因。"""
 
-    def __init__(self, capability: str, plugin_id: str, provider_id: str):
+    def __init__(
+        self,
+        capability: str,
+        plugin_id: str,
+        provider_id: str,
+        reason: str | None = None,
+    ):
         self.capability = capability
         self.plugin_id = plugin_id
         self.provider_id = provider_id
-        super().__init__(
+        self.reason = reason
+        message = (
             f"provider {provider_id!r} (plugin {plugin_id!r}) "
             f"is not available for capability {capability!r}"
+        )
+        if reason:
+            message += f": {reason}"
+        super().__init__(message, plugin_id=plugin_id)
+
+
+class ProviderSelectionError(PluginRuntimeError):
+    """BUG-011：选择阶段（supports/availability）发生异常且无可用候选时抛出，
+    不允许伪装成普通 CapabilityNotFoundError。携带完整诊断。"""
+
+    def __init__(self, capability: str, diagnostics: list[dict]):
+        self.capability = capability
+        self.diagnostics = list(diagnostics)
+        detail = "; ".join(
+            f"[{item.get('plugin_id')}/{item.get('provider_id')} "
+            f"{item.get('stage')}] {item.get('error_type')}: {item.get('message')}"
+            for item in self.diagnostics
+        )
+        super().__init__(
+            f"provider selection failed with exceptions for capability "
+            f"{capability!r}: {detail}"
         )
 
 

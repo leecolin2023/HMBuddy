@@ -42,6 +42,7 @@ hmbuddy-desktop = "desktop.app:main"
 packages = [
     "workspace",
     "adapters",
+    "adapters.ocr",
     "services",
     "llm",
     "desktop",
@@ -55,6 +56,9 @@ packages = [
     "plugins.pptx",
     "plugins.text",
 ]
+
+[tool.setuptools.package-data]
+"*" = ["plugin.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests", "evals"]

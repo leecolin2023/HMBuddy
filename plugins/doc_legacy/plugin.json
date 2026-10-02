@@ -25,9 +25,7 @@
     "wps.com"
   ],
   "platforms": [
-    "windows",
-    "linux",
-    "darwin"
+    "windows"
   ],
   "runtime": {
     "python": ">=3.10"

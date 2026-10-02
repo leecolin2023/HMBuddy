@@ -10,7 +10,7 @@ from pathlib import Path
 from pptx import Presentation
 from pptx.enum.shapes import MSO_SHAPE_TYPE
 
-from workspace.artifact import Artifact, ArtifactBlock
+from workspace.artifact import Artifact, ArtifactBlock, ArtifactLocator
 from workspace.errors import EncryptedArtifactError
 
 from .base import ArtifactAdapter, assign_block_ids, ensure_not_ole
@@ -74,6 +74,10 @@ class PptxAdapter(ArtifactAdapter):
                                 "columns": len(cells[0]) if cells else 0,
                                 "cells": cells,
                             },
+                            locator=ArtifactLocator(
+                                "pptx",
+                                {"slide": slide_index, "shape_index": shape_index},
+                            ),
                         )
                     )
                     continue
@@ -87,6 +91,10 @@ class PptxAdapter(ArtifactAdapter):
                             None,
                             {"slide": slide_index, "shape_index": shape_index},
                             {"name": shape.name, "shape_type": "PICTURE"},
+                            locator=ArtifactLocator(
+                                "pptx",
+                                {"slide": slide_index, "shape_index": shape_index},
+                            ),
                         )
                     )
                     continue
@@ -106,6 +114,10 @@ class PptxAdapter(ArtifactAdapter):
                                     "shape_type": str(shape_type),
                                     "is_placeholder": shape.is_placeholder,
                                 },
+                                locator=ArtifactLocator(
+                                    "pptx",
+                                    {"slide": slide_index, "shape_index": shape_index},
+                                ),
                             )
                         )
 
@@ -125,6 +137,7 @@ class PptxAdapter(ArtifactAdapter):
                     title,
                     {"slide": slide_index},
                     {"title": title, "layout": slide.slide_layout.name},
+                    locator=ArtifactLocator("pptx", {"slide": slide_index}),
                 )
             )
             walk_shapes(slide.shapes, slide_index, meta, [0])

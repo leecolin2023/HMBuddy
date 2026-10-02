@@ -1,6 +1,10 @@
-"""Workspace：工作目录边界 + 文件发现（规格 8.1 / 第 9 节）。
+"""Workspace：工作目录边界 + 文件发现（规格 8.1 / 第 9 节 + BUG-002/007/014 修订）。
 
-只负责发现文件与生成 ArtifactRef，不负责解析内容（职责边界见规格 8.1）。
+- 只负责发现文件与生成 ArtifactRef，不负责解析内容；
+- 支持格式不再由本模块静态维护（AC-H14）：当前 Runtime 能否处理某扩展名
+  由 Capability Catalog（plugin_runtime/catalog.py）决定——安装新插件后
+  Workspace 自动识别新格式（AC-H02）；
+- 生成的 ArtifactRef 携带 workspace_id 信任域标记（BUG-007 / AC-H07）。
 """
 from __future__ import annotations
 
@@ -9,29 +13,8 @@ import stat as stat_module
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .artifact import ArtifactRef, make_artifact_id
+from .artifact import ArtifactRef, make_artifact_id, make_workspace_id
 from .errors import WorkspaceBoundaryError
-
-# 核心支持格式（FR-W02 四类验收格式 + fce 能力融入的扩展格式）
-CORE_SUPPORTED_EXTENSIONS = {
-    ".docx": "docx",
-    ".pdf": "pdf",
-    ".xlsx": "xlsx",
-    ".pptx": "pptx",
-    # 遗留 Office 格式（XlsAdapter / DocLegacyAdapter）
-    ".xls": "xls",
-    ".doc": "doc",
-    # 办公文本格式（TextAdapter，多编码回退）
-    ".txt": "txt",
-    ".md": "md",
-    ".markdown": "md",
-    ".rst": "txt",
-    ".csv": "csv",
-    ".tsv": "csv",
-    ".log": "txt",
-}
-# 保留占位：仅扫描发现、尚无对应 Adapter 的可选格式
-OPTIONAL_SUPPORTED_EXTENSIONS = {}
 
 _TEMP_NAMES = {".ds_store", "desktop.ini", "thumbs.db"}
 _TEMP_SUFFIXES = (".tmp", ".temp", ".crdownload", ".partial")
@@ -40,22 +23,25 @@ _TEMP_SUFFIXES = (".tmp", ".temp", ".crdownload", ".partial")
 class Workspace:
     """代表当前允许系统操作的本地工作目录。"""
 
-    def __init__(self, root_path, extra_extensions: dict[str, str] | None = None):
+    def __init__(self, root_path, extension_catalog=None):
         root = Path(root_path).expanduser().resolve()
         if not root.exists():
             raise FileNotFoundError(f"workspace root does not exist: {root!r}")
         if not root.is_dir():
             raise NotADirectoryError(f"workspace root is not a directory: {root!r}")
         self.root_path = root
-        self._extension_map = dict(CORE_SUPPORTED_EXTENSIONS)
-        if extra_extensions:
-            self._extension_map.update(
-                {ext.lower(): t for ext, t in extra_extensions.items()}
-            )
+        self.workspace_id = make_workspace_id(root)
+        if extension_catalog is None:
+            # 延迟导入避免循环依赖；默认目录来自当前 Runtime 的 Registry（BUG-002）
+            from plugin_runtime.catalog import get_default_catalog
+
+            extension_catalog = get_default_catalog()
+        self.catalog = extension_catalog
 
     @property
-    def supported_extensions(self) -> dict[str, str]:
-        return dict(self._extension_map)
+    def supported_extensions(self) -> set[str]:
+        """当前可发现的扩展名集合（由 Capability Catalog 派生，只读视图）。"""
+        return self.catalog.artifact_extensions()
 
     @staticmethod
     def is_temp_or_hidden(name: str) -> bool:
@@ -80,7 +66,8 @@ class Workspace:
         return bool(attrs & hidden_flag) if attrs else False
 
     def list_artifacts(self) -> list[ArtifactRef]:
-        """FR-W01：递归遍历工作目录，返回支持格式的 ArtifactRef（按路径稳定排序）。"""
+        """FR-W01：递归遍历工作目录，返回当前 Runtime 可处理的 ArtifactRef
+        （按路径稳定排序；扩展名合法性由 Capability Catalog 决定）。"""
         refs: list[ArtifactRef] = []
         for dirpath, dirnames, filenames in os.walk(self.root_path):
             dirnames[:] = [d for d in dirnames if not d.startswith(".")]
@@ -95,9 +82,9 @@ class Workspace:
                 if self._has_hidden_attribute(st):
                     continue
                 extension = file_path.suffix.lower()
-                artifact_type = self._extension_map.get(extension)
-                if artifact_type is None:
+                if not extension or not self.catalog.can_handle_extension(extension):
                     continue
+                relative = file_path.relative_to(self.root_path).as_posix()
                 refs.append(
                     ArtifactRef(
                         artifact_id=make_artifact_id(file_path),
@@ -108,7 +95,9 @@ class Workspace:
                         modified_at=datetime.fromtimestamp(
                             st.st_mtime, tz=timezone.utc
                         ),
-                        artifact_type=artifact_type,
+                        artifact_type=self.catalog.artifact_type_for(extension),
+                        workspace_id=self.workspace_id,
+                        relative_path=relative,
                     )
                 )
         refs.sort(key=lambda ref: ref.path)

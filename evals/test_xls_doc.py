@@ -32,9 +32,85 @@ def test_xls_extraction_method_recorded(xls_standard):
                                                       "Ket.Application", "ET.Application"}
 
 
+def test_xls_com_fallback_requires_dynamic_permission(tmp_path, monkeypatch):
+    """BUG-001/4.3：XLS 的 xlrd 路径只需 filesystem.read；
+    但准备 COM fallback 前必须动态申请 office.com。"""
+    import sys
+    import types
+
+    from plugin_runtime.errors import PluginPermissionError
+    from services.artifact_reader import ArtifactReader
+
+    calls = {"dispatch": 0}
+    fake_client = types.ModuleType("win32com.client")
+
+    def dispatch_ex(prog_id):
+        calls["dispatch"] += 1
+        raise AssertionError("DispatchEx must not be called without permission")
+
+    fake_client.DispatchEx = dispatch_ex
+    fake_win32com = types.ModuleType("win32com")
+    fake_win32com.client = fake_client
+    monkeypatch.setitem(sys.modules, "win32com", fake_win32com)
+    monkeypatch.setitem(sys.modules, "win32com.client", fake_client)
+    monkeypatch.setitem(sys.modules, "xlrd", None)  # 逼走 COM 路径
+
+    target = tmp_path / "legacy.xls"
+    target.write_bytes(b"fake xls bytes")
+    reader = ArtifactReader()  # 默认 Policy
+    with pytest.raises(PluginPermissionError, match="office.com"):
+        reader.read_artifact(target)
+    assert calls["dispatch"] == 0
+
+
 def test_corrupt_doc_raises_parse_error(tmp_path):
-    """.doc：无论平台是否装有 Word/WPS，损坏文件都必须落入显式错误类型。"""
+    """.doc：授权 office.com 后，损坏文件必须落入显式解析错误类型。"""
+    from adapters.text import TEXT_ENCODINGS  # noqa: F401  (确保模块可用)
+    from plugin_runtime.policy import PermissionPolicy
+    from services.artifact_reader import ArtifactReader
+
     target = tmp_path / "broken.doc"
     target.write_bytes(b"this is not a real OLE document")
+    reader = ArtifactReader(
+        policy=PermissionPolicy(
+            granted=frozenset({"filesystem.read", "office.com", "wps.com"})
+        )
+    )
     with pytest.raises(ArtifactParseError):
-        read_artifact(target)
+        reader.read_artifact(target)
+
+
+def test_doc_com_blocked_without_permission(tmp_path, monkeypatch):
+    """BUG-001 / AC-H01 / T1：默认 Policy 下 .doc 不得实际启动 Word/WPS。
+
+    注入假的 win32com.client 模块记录 DispatchEx 调用；权限校验必须发生在
+    任何 COM 调用之前（即使 xlrd 缺失也一样）。
+    """
+    import sys
+    import types
+
+    from plugin_runtime.errors import PluginPermissionError
+    from services.artifact_reader import ArtifactReader
+
+    calls = {"dispatch": 0}
+
+    fake_client = types.ModuleType("win32com.client")
+
+    def dispatch_ex(prog_id):
+        calls["dispatch"] += 1
+        raise AssertionError("DispatchEx must not be called without permission")
+
+    fake_client.DispatchEx = dispatch_ex
+    fake_win32com = types.ModuleType("win32com")
+    fake_win32com.client = fake_client
+    monkeypatch.setitem(sys.modules, "win32com", fake_win32com)
+    monkeypatch.setitem(sys.modules, "win32com.client", fake_client)
+    # 同时屏蔽 xlrd，逼走 COM 路径
+    monkeypatch.setitem(sys.modules, "xlrd", None)
+
+    target = tmp_path / "anything.doc"
+    target.write_bytes(b"whatever content")
+    reader = ArtifactReader()  # 默认 Policy：仅 filesystem.read
+    with pytest.raises(PluginPermissionError, match="office.com"):
+        reader.read_artifact(target)
+    assert calls["dispatch"] == 0

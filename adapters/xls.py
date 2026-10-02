@@ -2,6 +2,9 @@
 
 两个依赖都是懒加载：未安装 xlrd 且不在 Windows（或没装 pywin32/Office）时，
 返回带明确提示的解析错误，不影响其它格式。
+
+Phase 1.1.1（BUG-001）：xlrd 路径只需 filesystem.read；准备 COM fallback
+前必须通过 permission gate 申请 office.com（动态权限，规格 4.3）。
 """
 from __future__ import annotations
 
@@ -9,7 +12,7 @@ import os
 from pathlib import Path
 from typing import Any, List
 
-from workspace.artifact import Artifact, ArtifactBlock
+from workspace.artifact import Artifact, ArtifactBlock, ArtifactLocator
 from workspace.errors import ArtifactParseError
 
 from .base import ArtifactAdapter, assign_block_ids
@@ -50,6 +53,14 @@ class XlsAdapter(ArtifactAdapter):
     artifact_type = "xls"
     supported_extensions = (".xls",)
     parser_library = "xlrd/pywin32"
+
+    def __init__(self, ocr_options=None):
+        super().__init__(ocr_options)
+        self._permission_gate = None
+
+    def set_permission_gate(self, gate) -> None:
+        """由 Provider 在每次 execute 前注入（BUG-001 动态权限受控接口）。"""
+        self._permission_gate = gate
 
     def read(self, path: Path, artifact_id: str) -> Artifact:
         result = self._read_with_xlrd(path)
@@ -178,6 +189,9 @@ class XlsAdapter(ArtifactAdapter):
     # ------------------------------------------------------------------
 
     def _read_with_com(self, path: Path):
+        # BUG-001 / 规格 4.3：xlrd 失败准备 COM fallback 前申请 office.com
+        if self._permission_gate is not None:
+            self._permission_gate("office.com")
         if os.name != "nt":
             return "缺少 xlrd，无法读取 .xls（当前平台无 COM 兼容方式）。"
         try:

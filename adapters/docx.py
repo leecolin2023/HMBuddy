@@ -13,7 +13,7 @@ from docx.oxml.ns import qn
 from docx.table import Table
 from docx.text.paragraph import Paragraph
 
-from workspace.artifact import Artifact, ArtifactBlock
+from workspace.artifact import Artifact, ArtifactBlock, ArtifactLocator
 from workspace.errors import EncryptedArtifactError
 
 from .base import ArtifactAdapter, assign_block_ids, ensure_not_ole
@@ -199,6 +199,9 @@ class DocxAdapter(ArtifactAdapter):
                             None,
                             {"paragraph_index": paragraph_index},
                             {"count": len(images), "images": images},
+                            locator=ArtifactLocator(
+                                "docx", {"paragraph_index": paragraph_index}
+                            ),
                         )
                     )
                 if not text:
@@ -215,6 +218,9 @@ class DocxAdapter(ArtifactAdapter):
                             text,
                             {"paragraph_index": paragraph_index},
                             {"level": level},
+                            locator=ArtifactLocator(
+                                "docx", {"paragraph_index": paragraph_index}
+                            ),
                         )
                     )
                     continue
@@ -228,13 +234,23 @@ class DocxAdapter(ArtifactAdapter):
                             text,
                             {"paragraph_index": paragraph_index},
                             {"list_level": list_level},
+                            locator=ArtifactLocator(
+                                "docx", {"paragraph_index": paragraph_index}
+                            ),
                         )
                     )
                     continue
                 counts["paragraph"] += 1
                 blocks.append(
                     ArtifactBlock(
-                        "", "paragraph", text, {"paragraph_index": paragraph_index}, {}
+                        "",
+                        "paragraph",
+                        text,
+                        {"paragraph_index": paragraph_index},
+                        {},
+                        locator=ArtifactLocator(
+                            "docx", {"paragraph_index": paragraph_index}
+                        ),
                     )
                 )
             elif child.tag == qn("w:tbl"):
@@ -249,6 +265,7 @@ class DocxAdapter(ArtifactAdapter):
                         None,
                         {"table_index": table_index},
                         table_to_block_metadata(extracted_table),
+                        locator=ArtifactLocator("docx", {"table_index": table_index}),
                     )
                 )
 

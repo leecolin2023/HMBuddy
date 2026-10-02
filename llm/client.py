@@ -12,13 +12,15 @@ import urllib.error
 import urllib.request
 from abc import ABC, abstractmethod
 
-from .context import artifact_to_context
+from .context import DEFAULT_CONTEXT_POLICY, ContextPolicy, build_context
 
 DEFAULT_TIMEOUT_SECONDS = 60
 
 SYSTEM_PROMPT = (
     "你是企业办公文档分析助手。只依据用户提供的文档内容回答问题；"
     "如果文档中没有相关信息，请明确说明文档中没有该信息，不要编造。"
+    "如果文档上下文中出现 [Context Truncated] 或任何截断标注，"
+    "说明展示给你的内容不完整，不得声称已完整审阅全部内容。"
 )
 
 
@@ -29,14 +31,20 @@ class LLMError(RuntimeError):
 class BaseLLMClient(ABC):
     model_name: str = "base"
 
+    def __init__(self, context_policy: ContextPolicy | None = None):
+        # BUG-006 / AC-H06：LLM 主路径默认通过 ContextPolicy 构造有界 Context，
+        # 调用方无需自行设置 max_chars。
+        self.context_policy = context_policy or DEFAULT_CONTEXT_POLICY
+
     @abstractmethod
     def complete(self, system: str, user: str) -> str:
         """最原始的补全接口，子类实现具体协议。"""
 
     def ask(self, artifact, question: str) -> str:
         """规格 16 节固定流程：Artifact → Context → LLM → 回答。"""
-        context = artifact_to_context(artifact)
-        user_message = f"{context}\n\n[Question]\n{question}"
+        context_result = build_context(artifact, policy=self.context_policy)
+        user_message = f"{context_result.text}\n\n[Question]\n{question}"
+        self.last_context_result = context_result
         return self.complete(SYSTEM_PROMPT, user_message)
 
 
@@ -92,13 +100,17 @@ class OpenAICompatibleClient(BaseLLMClient):
 
 
 class MockLLMClient(BaseLLMClient):
-    """测试 / 离线演示用：不访问网络，返回固定答案。"""
+    """测试 / 离线演示用：不访问网络，返回固定答案并记录收到的提示。"""
 
     def __init__(self, reply: str = "mock answer"):
+        super().__init__()
         self.reply = reply
         self.model_name = "mock"
+        self.last_user_message: str | None = None
+        self.last_context_result = None
 
     def complete(self, system: str, user: str) -> str:
+        self.last_user_message = user
         return self.reply
 
 

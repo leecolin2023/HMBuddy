@@ -8,7 +8,23 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional, Protocol, runtime_checkable
 
-from workspace.artifact import Artifact, ArtifactRef
+from workspace.artifact import Artifact, ArtifactRef, ArtifactLocator
+
+__all__ = [
+    "Artifact",
+    "ArtifactRef",
+    "ArtifactLocator",
+    "CAPABILITY_READ_FULL",
+    "IMPLEMENTED_CAPABILITIES",
+    "RESERVED_CAPABILITY_NAMESPACES",
+    "SUPPORTED_API_VERSION",
+    "KNOWN_PERMISSIONS",
+    "CapabilityRequest",
+    "CapabilityResult",
+    "PluginContext",
+    "CapabilityProvider",
+    "Plugin",
+]
 
 # ---------------------------------------------------------------------------
 # Capability 命名规范（规格第 8 节）：<domain>.<verb>[.<mode>]
@@ -57,16 +73,8 @@ KNOWN_PERMISSIONS = frozenset(
 
 
 # ---------------------------------------------------------------------------
-# ArtifactLocator（规格第 13 节）
+# ArtifactLocator（规格第 13 节）：核心定义在 workspace.artifact，此处再导出
 # ---------------------------------------------------------------------------
-
-
-@dataclass
-class ArtifactLocator:
-    """格式特有的定位描述；解释权归对应插件所有，Core 只保存和传递。"""
-
-    scheme: str
-    data: dict = field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------
@@ -117,6 +125,9 @@ class PluginContext:
     resolved_path 是 Reader 已经过 Workspace 边界校验的路径（FR-S01）——
     Provider 应使用它，而不是直接信任外部传入路径。
     granted_permissions 是 Policy 实际授权的权限集合。
+    require_permission(permission) 是受控的动态权限接口（BUG-001/4.3 节）：
+    Provider 在准备进入 COM / 网络 / 写操作前必须调用它，未授权即抛
+    PluginPermissionError。
     """
 
     resolved_path: Optional[Path] = None
@@ -124,6 +135,7 @@ class PluginContext:
     ocr_options: Any = None
     granted_permissions: frozenset = frozenset({PERMISSION_FILESYSTEM_READ})
     plugin_dir: Optional[Path] = None
+    require_permission: Optional[Any] = None
     services: dict = field(default_factory=dict)
 
 

@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from workspace.artifact import Artifact, ArtifactBlock
+from workspace.artifact import Artifact, ArtifactBlock, ArtifactLocator
 
 from .base import ArtifactAdapter, assign_block_ids
 
@@ -48,6 +48,7 @@ class TextAdapter(ArtifactAdapter):
                     line,
                     {"line_index": line_index - 1},
                     {},
+                    locator=ArtifactLocator("text", {"line_index": line_index - 1}),
                 )
             )
 

@@ -1,6 +1,8 @@
-"""Plugin Runtime 装配层（规格 Step 4 / G2）：发现 → 加载 → 注册 → Runtime。
+"""Plugin Runtime 装配层（规格 Step 4 / G2 + BUG-004 修订）：发现 → 加载 → 注册 → Runtime。
 
 Core 不通过静态列表知道具体实现；上层只面向 execute(CapabilityRequest)。
+Registry 只注册 Loader 已校验的那批 Provider 实例（AC-H04），
+禁止再次调用 plugin.providers()。
 """
 from __future__ import annotations
 
@@ -38,6 +40,7 @@ def assemble_runtime(
     external_plugin_dirs: list[Path] | None = None,
     use_env_plugin_path: bool = True,
     policy: PermissionPolicy | None = None,
+    max_traces: int | None = None,
 ) -> RuntimeAssembly:
     """执行完整的 发现 → 加载 → 注册 流程，输出可观察的装配报告。
 
@@ -72,7 +75,8 @@ def assemble_runtime(
             continue
         seen_plugin_ids.add(plugin_id)
         load_report.loaded.append(loaded)
-        for provider in loaded.plugin.providers():
+        # BUG-004 / AC-H04：只注册 Loader 校验过的同一批 Provider 实例
+        for provider in loaded.providers:
             try:
                 registry.register(provider)
             except (PluginRuntimeError, ValueError) as exc:
@@ -80,7 +84,10 @@ def assemble_runtime(
                     (plugin_id, f"provider registration failed: {exc}")
                 )
 
-    runtime = CapabilityRuntime(registry, policy)
+    runtime_kwargs = {"policy": policy}
+    if max_traces is not None:
+        runtime_kwargs["max_traces"] = max_traces
+    runtime = CapabilityRuntime(registry, **runtime_kwargs)
     return RuntimeAssembly(
         runtime=runtime,
         discovery=discovery,
@@ -100,4 +107,8 @@ def get_default_runtime(force_reload: bool = False) -> RuntimeAssembly:
     global _default_assembly
     if _default_assembly is None or force_reload:
         _default_assembly = assemble_runtime()
+        # Runtime 重建后默认 Capability Catalog 必须随之复位（BUG-002）
+        from .catalog import reset_default_catalog
+
+        reset_default_catalog()
     return _default_assembly

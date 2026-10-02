@@ -19,6 +19,21 @@ from workspace.artifact import Artifact, ArtifactBlock
 MAX_TABLE_ROWS = 200
 
 
+@dataclass(frozen=True)
+class ContextPolicy:
+    """LLM Context 全局预算（BUG-006 / FR-C01）：主路径默认必须有界。
+
+    默认值是工程起点而非规格锁死值，可按真实模型窗口调整。
+    """
+
+    max_chars: int = 20000
+    max_blocks: int = 500
+    max_table_rows: int = 200
+
+
+DEFAULT_CONTEXT_POLICY = ContextPolicy()
+
+
 @dataclass
 class ContextBuildResult:
     """build_context 的结构化返回：截断与省略必须可观察（AC-09）。"""
@@ -32,11 +47,20 @@ class ContextBuildResult:
 
 def build_context(
     artifact: Artifact,
-    max_table_rows: int = MAX_TABLE_ROWS,
+    max_table_rows: int | None = None,
     max_chars: int | None = None,
     max_blocks: int | None = None,
     relative_path: str | None = None,
+    policy: ContextPolicy | None = None,
 ) -> ContextBuildResult:
+    """构造 LLM Context；policy 提供默认预算（BUG-006），
+    显式参数覆盖 policy。"""
+    if policy is None and (max_chars is None or max_blocks is None):
+        policy = DEFAULT_CONTEXT_POLICY
+    policy = policy or DEFAULT_CONTEXT_POLICY
+    max_chars = max_chars if max_chars is not None else policy.max_chars
+    max_blocks = max_blocks if max_blocks is not None else policy.max_blocks
+    max_table_rows = max_table_rows if max_table_rows is not None else policy.max_table_rows
     warnings: list[str] = []
     lines: list[str] = [
         "[Document]",

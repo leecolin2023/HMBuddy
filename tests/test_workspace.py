@@ -68,14 +68,22 @@ def test_artifact_id_stable_across_scans(ws_dir):
 
 
 def test_optional_extensions_only_when_requested(ws_dir):
+    """支持格式由 Capability Catalog 决定（BUG-002）：注入静态目录即可扩展。"""
+    from plugin_runtime.catalog import StaticExtensionCatalog
+
     (ws_dir / "config.ini").write_bytes(b"[section]\nkey=value\n")
-    # 默认核心扩展集不包含 .ini
+    # 默认目录（当前 Runtime）不包含 .ini
     default_refs = Workspace(ws_dir).list_artifacts()
     assert all(ref.extension != "ini" for ref in default_refs)
 
-    extended = Workspace(ws_dir, extra_extensions={".ini": "txt"}).list_artifacts()
+    catalog = StaticExtensionCatalog(
+        {".docx", ".pdf", ".xlsx", ".pptx", ".ini"}
+    )
+    extended = Workspace(ws_dir, extension_catalog=catalog).list_artifacts()
     names = {ref.name for ref in extended}
     assert "config.ini" in names
+    ini_ref = next(ref for ref in extended if ref.name == "config.ini")
+    assert ini_ref.artifact_type == "ini"
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows 隐藏属性")

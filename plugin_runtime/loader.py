@@ -21,6 +21,9 @@ from .errors import DuplicatePluginError, PluginLoadError
 class LoadedPlugin:
     plugin: object
     discovered: DiscoveredPlugin
+    # BUG-004 / AC-H04：保存已校验的 Provider 实例；Registry 只允许注册这一批，
+    # 不得再次调用 plugin.providers()（防止二次物化绕过校验）。
+    providers: list = field(default_factory=list)
 
 
 @dataclass
@@ -46,27 +49,70 @@ def _load_builtin_class(manifest) -> type:
 
 
 def _load_external_class(manifest, plugin_dir) -> type:
-    """外部插件：按文件路径加载（不依赖 sys.path，模块名随机化避免冲突）。"""
-    file_name = manifest.entrypoint_module.split(".")[-1] or "plugin"
-    module_path = plugin_dir / f"{file_name}.py"
-    if not module_path.is_file():
-        raise PluginLoadError(
-            f"plugin {manifest.id!r}: entrypoint file not found: {module_path}"
+    """外部插件加载（BUG-013 / AC-H13）。
+
+    - 单文件插件：entrypoint.module 无点号 → plugin_dir/<module>.py；
+    - 标准包插件：entrypoint.module 含点号（如 hmbuddy_plugin.plugin）→
+      以 plugin_dir/<首段>/ 为包根加载，支持包内相对 import；
+      模块名随机化避免跨插件冲突，不污染 sys.path。
+    """
+    module_name = manifest.entrypoint_module
+    if "." not in module_name:
+        module_path = plugin_dir / f"{module_name}.py"
+        if not module_path.is_file():
+            raise PluginLoadError(
+                f"plugin {manifest.id!r}: entrypoint file not found: {module_path}"
+            )
+        spec = importlib.util.spec_from_file_location(
+            f"hmbuddy_external_plugin_{uuid.uuid4().hex}", module_path
         )
-    spec = importlib.util.spec_from_file_location(
-        f"hmbuddy_external_plugin_{uuid.uuid4().hex}", module_path
+        if spec is None or spec.loader is None:
+            raise PluginLoadError(f"plugin {manifest.id!r}: cannot create import spec")
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        try:
+            spec.loader.exec_module(module)
+        except Exception as exc:
+            raise PluginLoadError(
+                f"plugin {manifest.id!r}: import failed for {module_path}: {exc!r}"
+            ) from exc
+        return getattr(module, manifest.entrypoint_class, None)
+
+    # 标准 package 插件：以 <plugin_dir>/<首段>/ 为包根
+    package_root_name = module_name.split(".", 1)[0]
+    package_dir = plugin_dir / package_root_name
+    init_file = package_dir / "__init__.py"
+    if not init_file.is_file():
+        raise PluginLoadError(
+            f"plugin {manifest.id!r}: package entrypoint expects "
+            f"{init_file} with __init__.py"
+        )
+    package_name = f"hmbuddy_ext_pkg_{uuid.uuid4().hex}"
+    package_spec = importlib.util.spec_from_file_location(
+        package_name,
+        init_file,
+        submodule_search_locations=[str(package_dir)],
     )
-    if spec is None or spec.loader is None:
-        raise PluginLoadError(f"plugin {manifest.id!r}: cannot create import spec")
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
+    if package_spec is None or package_spec.loader is None:
+        raise PluginLoadError(f"plugin {manifest.id!r}: cannot create package spec")
+    package_module = importlib.util.module_from_spec(package_spec)
+    sys.modules[package_name] = package_module
     try:
-        spec.loader.exec_module(module)
+        package_spec.loader.exec_module(package_module)
     except Exception as exc:
         raise PluginLoadError(
-            f"plugin {manifest.id!r}: import failed for {module_path}: {exc!r}"
+            f"plugin {manifest.id!r}: package import failed for {init_file}: {exc!r}"
         ) from exc
-    return getattr(module, manifest.entrypoint_class, None)
+
+    subpath = module_name.split(".", 1)[1]
+    try:
+        submodule = importlib.import_module(f"{package_name}.{subpath}")
+    except Exception as exc:
+        raise PluginLoadError(
+            f"plugin {manifest.id!r}: cannot import submodule "
+            f"{module_name!r}: {exc!r}"
+        ) from exc
+    return getattr(submodule, manifest.entrypoint_class, None)
 
 
 def load_plugin(discovered: DiscoveredPlugin) -> LoadedPlugin:
@@ -108,6 +154,7 @@ def load_plugin(discovered: DiscoveredPlugin) -> LoadedPlugin:
         raise PluginLoadError(f"plugin {manifest.id!r}: providers() returned nothing")
 
     declared_capabilities = set(manifest.capability_ids())
+    validated_providers = []
     for provider in provider_list:
         missing = [
             attr
@@ -125,12 +172,22 @@ def load_plugin(discovered: DiscoveredPlugin) -> LoadedPlugin:
                 f"claims capability {getattr(provider, 'capability_id', '')!r} "
                 f"which is not declared in the manifest"
             )
-        provider.plugin_id = provider.plugin_id or manifest.id
-        provider.plugin_version = provider.plugin_version or manifest.version
-        # 权限声明随 Provider 下发，供 Runtime Policy 计算 effective grant（AC-07）
+        # BUG-003 / AC-H03：Manifest 是唯一权威源，强制注入覆盖 Provider 自设字段
+        capability_declaration = next(
+            item
+            for item in manifest.capabilities
+            if item.id == getattr(provider, "capability_id", "")
+        )
+        provider.plugin_id = manifest.id
+        provider.plugin_version = manifest.version
+        provider.priority = capability_declaration.priority
+        provider.extensions = tuple(manifest.extensions)
         provider.declared_permissions = tuple(manifest.permissions)
+        provider.platforms = tuple(manifest.platforms)
+        provider.python_requires = manifest.python_requires
+        validated_providers.append(provider)
 
-    return LoadedPlugin(plugin=instance, discovered=discovered)
+    return LoadedPlugin(plugin=instance, discovered=discovered, providers=validated_providers)
 
 
 def check_duplicate_plugin_id(loaded: list[LoadedPlugin]) -> None:

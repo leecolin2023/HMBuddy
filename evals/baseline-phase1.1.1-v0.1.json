@@ -1,0 +1,58 @@
+{
+  "phase": "phase-1.1.1-plugin-runtime-contract-hardening",
+  "spec_version": "V0.1",
+  "recorded_at": "2026-10-02",
+  "baseline_commit_before": "8c68df1",
+  "previous_baselines": [
+    "evals/baseline-phase1.1-v0.1.json",
+    "evals/baseline-phase1-v0.2.json",
+    "evals/baseline-phase1-v0.1.json"
+  ],
+  "environment": {
+    "python": "3.12.3",
+    "platform": "Windows 10 x64"
+  },
+  "bug_fixes": {
+    "BUG-001 权限强阻断 (P0)": "pass——Provider required_permissions 由 Runtime 在 execute 前强校验；PluginContext.require_permission / adapter permission gate 提供动态权限；默认 Policy 下 .doc 不进入 execute、XLS COM fallback 前申请 office.com，mock DispatchEx 零调用（T1）",
+    "BUG-002 Workspace 硬编码扩展名 (P0)": "pass——新增 plugin_runtime/catalog.py（CapabilityCatalog/StaticExtensionCatalog），Workspace 扩展名由 Catalog 派生；.foo 外部插件不改 Core 完成 Workspace 发现→ArtifactRef→read_artifact 全链路（T2）",
+    "BUG-003 Manifest 权威 (P1)": "pass——Loader 强制注入 plugin_id/plugin_version/priority/extensions/declared_permissions/platforms/python_requires；Provider 冲突声明被覆盖（T3）",
+    "BUG-004 Provider 二次物化 (P1)": "pass——LoadedPlugin.providers 保存已校验实例，Assembly 只注册该批对象，providers() 仅调用一次且 identity 一致（T4）",
+    "BUG-005 external_plugin_dirs 失效 (P1)": "pass——ArtifactReader(external_plugin_dirs=...) 直接装配独立 Runtime，无 monkeypatch/环境变量（T5）",
+    "BUG-006 Context 主路径无限 (P1)": "pass——ContextPolicy(max_chars=20000/max_blocks=500/max_table_rows=200) 默认进入 LLM client.ask 主路径，截断标记 + System Prompt 约束（T6）",
+    "BUG-007 Ref 信任域 (P1)": "pass——ArtifactRef.workspace_id + relative_path；脱离原 Workspace（或不匹配）读取抛 WorkspaceBoundaryError（T7）",
+    "BUG-008 可用性不参与路由 (P1)": "pass——availability.py 校验 platforms/python_requires，Provider 依赖探针钩子；doc_legacy manifest 平台修正为 windows（T8）",
+    "BUG-009 Locator 未进 Block (P1)": "pass——ArtifactLocator 定义移入 workspace.artifact（核心契约），ArtifactBlock.locator 字段，DOCX/PDF/XLSX/PPTX/TEXT 全部生成（T9）",
+    "BUG-010 success 语义 (P2)": "pass——CapabilityResult.success=False 强制转 ProviderExecutionError，trace 记 error（T10）",
+    "BUG-011 选择异常静默 (P2)": "pass——Router 记录 stage/plugin/provider/error 诊断；全部异常时抛 ProviderSelectionError（T11）",
+    "BUG-012 fallback 白名单 (P2)": "pass——FALLBACK_ALLOWED_ERRORS 显式为 (ArtifactParseError, ProviderExecutionError)；EncryptedArtifactError 显式决定允许 fallback（换 COM Provider 有意义）；越界/不存在/权限/能力缺失/不可用禁止（T12）",
+    "BUG-013 外部插件仅单文件 (P2)": "pass——entrypoint.module 含点号时按标准 package 加载（submodule_search_locations + 随机包名），相对 import 正常，不污染 sys.path（T13）",
+    "BUG-014 静态 ARTIFACT_TYPES (P2)": "pass——已删除；类型由 Catalog.artifact_type_for 派生",
+    "BUG-015 Trace 时间/无界 (P3)": "pass——started_at 在 execute 前记录；traces 改 deque(maxlen=200 可配置)（T15）",
+    "BUG-016 文档漂移 (P3)": "pass——README 阶段/架构/规格链接更新，测试数量统一引用 baseline",
+    "BUG-017 CI/安装态 (P3)": "pass——.github/workflows/ci.yml（3.10+3.12 × windows+ubuntu pytest；wheel build→clean venv install→scripts/install_smoke.py）；本地已实际验证 wheel 安装态（T14，期间发现并修复 adapters.ocr 子包未打包缺陷）"
+  },
+  "test_run": {
+    "command": "python -m pytest -q",
+    "passed": 202,
+    "skipped": 4,
+    "failed": 0,
+    "previous": "185 passed / 4 skipped（Phase 1.1.1 前）",
+    "growth_reason": "+17：权限强阻断(T1/AC-H01)、.foo 全链路(T2/AC-H02)、Manifest 权威(T3/AC-H03)、单次物化(T4/AC-H04)、external_plugin_dirs(T5/AC-H05)、默认预算(T6/AC-H06)、Ref 信任域(T7/AC-H07)、可用性(T8/AC-H08)、Locator(T9/AC-H09)、success 语义(T10/AC-H10)、选择诊断(T11/AC-H11)、fallback allowlist(T12/AC-H12)、package 插件(T13/AC-H13)、trace 收口(AC-H15)、Catalog 视图"
+  },
+  "compatibility": {
+    "read_artifact_facade": "保持兼容（C2）；policy 为新可选参数",
+    "breaking_changes": [
+      "默认 Policy 下 .doc 读取现在返回 PluginPermissionError（需授予 office.com）——规格 4.4 明确要求的行为",
+      "Workspace(extra_extensions=...) 参数移除，改用 extension_catalog 注入",
+      "locate: ArtifactRef.path 仍存在但不再作为信任依据；Workspace Ref 携带 workspace_id"
+    ],
+    "desktop": "desktop/ 未改动，presenter 测试保持通过"
+  },
+  "known_limitations": [
+    "python_requires 仅支持 '>=X.Y[.Z]' 形式的约束解析",
+    "权限仍是 Runtime Policy（非 OS 沙箱，规格 26.4）；强制执行点为 Runtime pre-execute 校验与动态 gate，Provider 若绕过 Runtime API 直接访问系统资源则无法拦截",
+    "外部插件 package 以随机包名注册进 sys.modules（避免冲突），进程生命周期内不卸载",
+    "EncryptedArtifactError 允许 fallback 是显式决策（对 COM 类 Provider 有意义），已测试固化",
+    "Phase 1 / 1.1 已知限制继续有效"
+  ]
+}

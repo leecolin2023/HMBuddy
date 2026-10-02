@@ -17,6 +17,7 @@ from pathlib import Path
 
 from plugin_runtime import (
     CapabilityRuntime,
+    assemble_runtime,
     get_default_runtime,
 )
 from plugin_runtime.base_provider import CapabilityProviderBase
@@ -32,6 +33,7 @@ from plugin_runtime.errors import (
     ProviderExecutionError,
 )
 from plugin_runtime.loader import LoadReport
+from plugin_runtime.policy import PermissionPolicy
 from plugin_runtime.registry import CapabilityRegistry
 from workspace.artifact import Artifact, ArtifactRef, make_artifact_id
 from workspace.errors import (
@@ -40,6 +42,7 @@ from workspace.errors import (
     ArtifactRuntimeError,
     ArtifactTooLargeError,
     UnsupportedArtifactTypeError,
+    WorkspaceBoundaryError,
 )
 from workspace.workspace import Workspace
 
@@ -99,24 +102,41 @@ class ArtifactReader:
         max_file_size: int = DEFAULT_MAX_FILE_SIZE,
         ocr_options=None,
         external_plugin_dirs: list[Path] | None = None,
+        policy: PermissionPolicy | None = None,
     ):
         self.workspace = workspace
         self.ocr_options = ocr_options
+        self.policy = policy
         self.max_file_size = max_file_size
         if adapters is not None:
             runtime, discovery, load_report = _build_compat_runtime(adapters)
             self.discovery = discovery
             self.load_report = load_report
-        else:
-            assembly = get_default_runtime(
-                force_reload=external_plugin_dirs is not None
+        elif external_plugin_dirs is not None or policy is not None:
+            # BUG-005 / AC-H05：显式插件目录或自定义 Policy 时，装配独立 Runtime
+            assembly = assemble_runtime(
+                external_plugin_dirs=external_plugin_dirs,
+                policy=policy,
             )
+            runtime = assembly.runtime
+            self.discovery = assembly.discovery
+            self.load_report = assembly.load_report
+        else:
+            assembly = get_default_runtime()
             runtime = assembly.runtime
             self.discovery = assembly.discovery
             self.load_report = assembly.load_report
         self.runtime: CapabilityRuntime = runtime
 
-    def read_artifact(self, path_or_ref, mode: str = "full") -> Artifact:
+    def read_artifact(
+        self,
+        path_or_ref,
+        mode: str = "full",
+        workspace: Workspace | None = None,
+    ) -> Artifact:
+        # 方法级 workspace 参数优先于构造器（便于同一 Reader 处理不同信任域）
+        effective_workspace = workspace if workspace is not None else self.workspace
+
         if mode != "full":
             raise ValueError(
                 f"read mode {mode!r} is not implemented yet; only 'full' is "
@@ -126,13 +146,26 @@ class ArtifactReader:
         if isinstance(path_or_ref, ArtifactRef):
             raw_path = Path(path_or_ref.path)
             artifact_id: str | None = path_or_ref.artifact_id
+            # BUG-007 / AC-H07：来自 Workspace 的 Ref 必须留在原信任域内
+            ref_workspace_id = getattr(path_or_ref, "workspace_id", None)
+            if ref_workspace_id is not None:
+                current_id = (
+                    effective_workspace.workspace_id if effective_workspace else None
+                )
+                if current_id != ref_workspace_id:
+                    raise WorkspaceBoundaryError(
+                        raw_path,
+                        f"artifact ref belongs to workspace {ref_workspace_id!r}; "
+                        "pass the originating Workspace to read it "
+                        "(workspace trust boundary)",
+                    )
         else:
             raw_path = Path(path_or_ref)
             artifact_id = None
 
         # ER-05：Workspace 边界检查（FR-S01：Provider 使用 Reader 校验后的路径）
-        if self.workspace is not None:
-            resolved = self.workspace.resolve_path(raw_path)
+        if effective_workspace is not None:
+            resolved = effective_workspace.resolve_path(raw_path)
         else:
             resolved = raw_path.expanduser().resolve()
 
@@ -165,7 +198,9 @@ class ArtifactReader:
         )
         context = PluginContext(
             resolved_path=resolved,
-            workspace_root=self.workspace.root_path if self.workspace is not None else None,
+            workspace_root=(
+                effective_workspace.root_path if effective_workspace is not None else None
+            ),
             ocr_options=self.ocr_options,
         )
 
@@ -260,17 +295,20 @@ def read_artifact(
     adapters: list | None = None,
     max_file_size: int = DEFAULT_MAX_FILE_SIZE,
     ocr_options=None,
+    policy: PermissionPolicy | None = None,
 ) -> Artifact:
     """Stable Facade（规格第 21 节）：Phase 1 / Phase 2 调用方式保持不变。
 
     workspace=None 时按普通文件路径读取；传入 Workspace 时强制边界检查。
     ocr_options 用于开启扫描件 OCR（默认关闭，模型仅从本地目录解析）。
+    policy 用于放宽/收紧权限（默认仅 filesystem.read）。
     """
     global _default_reader
     if (
         workspace is None
         and adapters is None
         and ocr_options is None
+        and policy is None
         and max_file_size == DEFAULT_MAX_FILE_SIZE
     ):
         if _default_reader is None:
@@ -281,4 +319,5 @@ def read_artifact(
         adapters=adapters,
         max_file_size=max_file_size,
         ocr_options=ocr_options,
+        policy=policy,
     ).read_artifact(path_or_ref, mode)
