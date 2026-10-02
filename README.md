@@ -1,139 +1,218 @@
-# HMBuddy — Phase 1: Local Office Artifact Runtime
+# HMBuddy — Local Office Artifact Runtime + Desktop Entry
 
-适用于企业内网、可离线运行的办公 Agent 项目的第一阶段：**把本地 Office 文件稳定地发现、统一读取、保留结构，并转化为上层 LLM 可靠消费的 Artifact**。
+HMBuddy 是一个面向企业内网、可离线运行的办公助手项目。
 
-需求依据：[requirements/phase-1-local-office-artifact-runtime-v0.1.md](./requirements/phase-1-local-office-artifact-runtime-v0.1.md)
+当前已完成两个阶段：
 
-## 它解决什么问题
+- **Phase 1：Local Office Artifact Runtime**  
+  稳定发现并统一读取 DOCX / PDF / XLSX / PPTX，保留必要结构并转成 Artifact。
+- **Phase 2：Desktop Entry & Human-in-the-loop Workspace**  
+  在 Phase 1 运行时之上增加桌面入口，让用户可以选择工作区、选择文件、读取结构摘要，并在已配置模型时直接问答。
 
-给定一个本地工作目录，系统可以：
+Phase 2 规格说明：
+[requirements/phase-2-desktop-entry-v0.1.md](./requirements/phase-2-desktop-entry-v0.1.md)
 
-1. **发现**目录中的 DOCX / PDF / XLSX / PPTX（过滤临时、隐藏、不支持文件）；
-2. 通过统一入口 `read_artifact()` **读取**任意支持格式，格式路由在内部完成；
-3. **保留结构**（标题层级、表格网格、单元格公式、页码/页归属、幻灯片顺序），不把文件压成一坨纯文本；
-4. 把 Artifact 渲染成对 LLM 友好的 **Context**，在用户指定文件的前提下完成内容问答。
+---
 
-第一阶段**只读**。不做 Agent 自主决策、文件搜索、文件修改、比较、RAG（见规格第 4 节非目标）。
-
-## 快速开始
+## 1. 桌面端快速开始
 
 ```bash
 # Python >= 3.10
-pip install -e ".[dev]"        # 或 pip install python-docx pdfplumber openpyxl python-pptx pytest fpdf2
+pip install -e ".[dev]"
 
-# 运行全部测试（83 项：单元测试 + Parser Eval + Context Eval；4 项 LLM Eval 需要环境变量）
-python -m pytest -q
+# 启动桌面端
+python -m desktop.app
 
-# 最小演示：读取文件并打印结构摘要（规格第 30 节的验收形态）
+# 安装后也可以直接使用命令
+hmbuddy-desktop
+```
+
+Windows 用户还可以直接双击仓库根目录：
+
+```text
+start_hmbuddy_desktop.bat
+```
+
+桌面端采用 Python 标准库 Tkinter，不新增 Electron / Node.js / 第三方 GUI 依赖。
+
+### 桌面端当前支持
+
+1. 选择本地 Workspace；
+2. 查看 DOCX / PDF / XLSX / PPTX 文件；
+3. 查看文件类型、大小、修改时间；
+4. 双击或点击按钮读取文件；
+5. 查看 Artifact 结构摘要、解析信息和有限内容预览；
+6. 配置模型后，对当前已读取文件直接提问；
+7. 文件解析与模型请求在后台线程运行，避免冻结 Tk 主线程。
+
+---
+
+## 2. LLM 配置
+
+HMBuddy 使用 OpenAI 兼容协议，可指向企业内网私有化模型端点。
+
+```bash
+# Linux / macOS
+export HMBUDDY_LLM_BASE_URL=https://llm.intranet.example.com/v1
+export HMBUDDY_LLM_MODEL=your-model
+export HMBUDDY_LLM_API_KEY=...
+```
+
+Windows PowerShell：
+
+```powershell
+$env:HMBUDDY_LLM_BASE_URL="https://llm.intranet.example.com/v1"
+$env:HMBUDDY_LLM_MODEL="your-model"
+$env:HMBUDDY_LLM_API_KEY="..."
+python -m desktop.app
+```
+
+如果未配置模型，桌面端仍可正常完成 Workspace 浏览与 Artifact 阅读，只会禁用问答按钮。
+
+---
+
+## 3. Phase 1 CLI 仍然保留
+
+CLI 继续用于调试、Eval 和无 GUI 环境。
+
+```bash
 python app.py evals/fixtures/sample.docx --no-llm
 python app.py evals/fixtures/sample.xlsx --show-context
-
-# 扫描一个目录
 python app.py evals/fixtures --scan
 ```
 
-### 接入 LLM 问答（OpenAI 兼容协议，可指向内网私有化端点）
+配置 LLM 后：
 
 ```bash
-export HMBUDDY_LLM_BASE_URL=https://llm.intranet.example.com/v1
-export HMBUDDY_LLM_MODEL=your-model
-export HMBUDDY_LLM_API_KEY=...        # 部分内网部署可留空
-
 python app.py evals/fixtures/sample.docx
-# 成功读取后进入交互问答：
-# > 这份方案主要包含哪些业务流程？
 ```
 
-未配置环境变量时，`pytest` 中的 4 项真实 LLM 问答 Eval 会自动跳过，其余全部可离线运行。
+---
 
-## 架构
+## 4. 架构
 
 ```text
-Application (app.py)
-      │
- LLM Interface (llm/)            ask(artifact, question) → Context → LLM
-      │
- Artifact Service (services/)    read_artifact() 单一入口 + 路由 + 日志 + 错误处理
-      │
- ┌────┴─────────────────────────┐
- Workspace (workspace/)        Artifact Model (workspace/artifact.py)
- 文件发现 / 边界 / ArtifactRef    Artifact / ArtifactBlock（统一核心对象）
-      │
- Adapter Router → DocxAdapter / PdfAdapter / XlsxAdapter / PptxAdapter (adapters/)
-      │
- Local Filesystem
+                 ┌──────────────────────────────┐
+                 │ Application Layer            │
+                 │ desktop/        app.py CLI   │
+                 └──────────────┬───────────────┘
+                                │
+                 ┌──────────────▼───────────────┐
+                 │ LLM Interface (llm/)         │
+                 │ Artifact → Context → LLM     │
+                 └──────────────┬───────────────┘
+                                │
+                 ┌──────────────▼───────────────┐
+                 │ Artifact Service (services/) │
+                 │ read_artifact()              │
+                 └──────────────┬───────────────┘
+                                │
+             ┌──────────────────┴──────────────────┐
+             │                                     │
+┌────────────▼────────────┐           ┌────────────▼────────────┐
+│ Workspace (workspace/)  │           │ Artifact Model          │
+│ 文件发现 / 边界 / Ref    │           │ Artifact / Block       │
+└────────────┬────────────┘           └────────────┬────────────┘
+             │                                     │
+             └──────────────┬──────────────────────┘
+                            │
+          ┌─────────────────▼─────────────────┐
+          │ Adapter Router                    │
+          │ DOCX / PDF / XLSX / PPTX          │
+          └─────────────────┬─────────────────┘
+                            │
+                    Local Filesystem
 ```
 
-核心设计原则（规格第 5 节）：
+Phase 2 的设计原则是：**Desktop 只是薄应用层，不复制 Phase 1 Runtime。**
 
-- **P2 格式隔离**：`if suffix == ".docx"` 这类判断只存在于 Adapter 层，上层（含 Context 渲染）只面向 `block_type` 工作；
-- **P3 Artifact 是统一核心对象**：四种格式进入上层后都是 `Artifact`；
-- **P4 保留结构不过早统一**：统一顶层模型 + 格式特有的 Block 结构（如 XLSX 的 cell_records、PDF 的页归属）。
+例如：
 
-## 目录结构
+- 文件列表来自 `Workspace.list_artifacts()`；
+- 文件读取来自 `read_artifact()`；
+- 问答来自 `client.ask(artifact, question)`；
+- UI 不直接调用具体格式 Adapter。
+
+---
+
+## 5. 目录结构
 
 ```text
-app.py                       演示入口（读取摘要 / 目录扫描 / 交互问答）
-workspace/                   Workspace 扫描、ArtifactRef、Artifact/ArtifactBlock、错误类型
-adapters/                    ArtifactAdapter 基类 + DOCX/PDF/XLSX/PPTX 四个适配器
+app.py                       Phase 1 CLI 演示入口
+desktop/                     Phase 2 桌面应用层
+  __init__.py
+  app.py                     Tkinter 页面、事件、后台线程
+  presenter.py               Artifact → UI 文本格式化
+workspace/                   Workspace、ArtifactRef、Artifact/ArtifactBlock、错误类型
+adapters/                    DOCX / PDF / XLSX / PPTX 适配器
 services/                    ArtifactReader：read_artifact() 单一入口
 llm/                         artifact_to_context() + OpenAI 兼容客户端
-evals/                       Parser Eval / Context Eval / QA Eval / baseline
-evals/fixtures/              6 个标准测试样例（已提交，生成脚本 generate_fixtures.py）
-tests/                       领域模型 / 错误类型 / Workspace 单元测试
-requirements/                需求规格说明书
+evals/                       Parser / Context / QA Eval + baseline
+tests/                       单元测试
+requirements/                分阶段需求规格说明书
+start_hmbuddy_desktop.bat    Windows 双击启动入口
 ```
 
-## 关键接口
+---
+
+## 6. Phase 1 核心能力
+
+给定一个本地工作目录，系统可以：
+
+1. **发现**目录中的 DOCX / PDF / XLSX / PPTX；
+2. 统一通过 `read_artifact()` 读取任意支持格式；
+3. **保留结构**，而不是把文件压成一大段纯文本；
+4. 将 Artifact 渲染成对 LLM 友好的 Context；
+5. 在用户明确指定文件的前提下完成内容问答。
+
+关键接口：
 
 ```python
 from workspace.workspace import Workspace
 from services.artifact_reader import read_artifact
 from llm.context import artifact_to_context
 
-# 1. 发现（G1）
-refs = Workspace("D:/工作目录").list_artifacts()   # -> list[ArtifactRef]
-
-# 2. 读取（G2/G3）：上层不感知格式差异
-artifact = read_artifact("报表.xlsx")              # 也接受 ArtifactRef
-artifact.blocks            # [ArtifactBlock(block_type="table", location={"sheet": ..., "range": ...}, ...)]
-artifact.metadata["sheets"]
-artifact.provenance        # adapter / read_at / parse_duration_ms / file_sha256 ...
-
-# 3. 交给 LLM（G4）
+refs = Workspace("D:/工作目录").list_artifacts()
+artifact = read_artifact("报表.xlsx")
 context = artifact_to_context(artifact)
 ```
 
-## 错误类型（规格第 18 节）
+Phase 1 规格：
+[requirements/phase-1-local-office-artifact-runtime-v0.1.md](./requirements/phase-1-local-office-artifact-runtime-v0.1.md)
 
-| 错误 | 场景 |
-|---|---|
-| `UnsupportedArtifactTypeError` | 不支持的格式（ER-01） |
-| `ArtifactNotFoundError` | 文件不存在 |
-| `WorkspaceBoundaryError` | 路径逃逸 Workspace 根目录（ER-05） |
-| `ArtifactTooLargeError` | 超过大小阈值，默认 50 MB，可配置（ER-04） |
-| `ArtifactParseError` | 文件损坏等解析失败，记录 adapter 与原始错误（ER-02） |
-| `EncryptedArtifactError` | 加密 / 密码保护 / OLE 魔数（ER-03） |
+---
 
-每次读取都会通过 logger `hmbuddy.artifact_reader` 记录：path、type、adapter、artifact_id、file_size、parse_duration_ms、parse_status、error（规格第 23 节）。
-
-## Eval 与 Baseline
+## 7. 测试
 
 ```bash
-python -m pytest -q                                   # 全部 Eval
-python -m pytest evals -q                             # 仅 Parser/Context/QA Eval
-python evals/fixtures/generate_fixtures.py            # 重新生成测试样例
+python -m pytest -q
 ```
 
-- Parser Eval：6 个样例 100% 无异常读取，结构断言见 `evals/test_docx.py` / `test_pdf.py` / `test_xlsx.py` / `test_pptx.py`；
-- Context Eval：问题所需事实必须进入 Context（区分 Parser Error 与 Context Error）；
-- QA Eval：配置 LLM 环境变量后运行真实问答（关键词校验）；
-- Baseline 记录：[evals/baseline-phase1-v0.1.json](./evals/baseline-phase1-v0.1.json)。
+桌面层新增的格式化逻辑放在 `desktop.presenter`，可以在无 GUI 环境下测试。
 
-## 已知限制
+GUI 最小 Smoke Test：
 
-见 baseline JSON 的 `known_limitations`。要点：openpyxl 生成的公式样例没有计算缓存（value 为 None，真实 Excel 文件不受影响）；PDF 为行级文本块、扫描件只标记 `requires_ocr`；Artifact ID 基于绝对路径，文件移动后 ID 变化。
+1. `python -m desktop.app`
+2. 选择 `evals/fixtures`
+3. 应看到 DOCX / PDF / XLSX / PPTX
+4. 双击 `sample.docx`
+5. 右侧出现结构摘要
+6. 未配置 LLM 时问答按钮保持禁用
+7. 配置 LLM 后可以对当前 Artifact 提问
 
-## 下一步
+---
 
-按规格第 28 节：Phase 1 完成后先观察真实使用中的失败模式，再决定进入 Workspace Discovery / Artifact Compare / Artifact Update / Agent Loop，不为架构美观提前加组件。
+## 8. 当前边界
+
+当前仍然是 **Human-in-the-loop**，明确不做：
+
+- Agent 自主选择文件；
+- Workspace 语义搜索；
+- 多文件自动比较；
+- Tool Calling Loop；
+- Planner；
+- Word / Excel / PPT 写回；
+- 自动覆盖原文件；
+- 任务持久化与中断恢复。
+
+这些能力是否进入下一阶段，由桌面入口投入真实使用后出现的失败模式决定，而不是为了凑完整 Agent 架构提前实现。
