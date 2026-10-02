@@ -12,4 +12,7 @@
 ## 当前规格
 
 - [Phase 1 — Local Office Artifact Runtime V0.1](./phase-1-local-office-artifact-runtime-v0.1.md)
+- [Phase 1.1 — Pluggable File Capability Runtime V0.1](./phase-1.1-pluggable-file-capability-runtime-v0.1.md)
 - [Phase 2 — Desktop Entry & Human-in-the-loop Workspace V0.1](./phase-2-desktop-entry-v0.1.md)
+
+> Phase 1.1 是对 Phase 1 文件运行时的插入式架构固化：将固定 Adapter 路由升级为 Plugin / Capability Runtime。它不回滚或重编号已完成的 Phase 2；Phase 2 桌面层继续依赖稳定的 `read_artifact()` 门面。
