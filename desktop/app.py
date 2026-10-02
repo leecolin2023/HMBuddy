@@ -350,11 +350,11 @@ class HMBuddyDesktopApp:
                 result = work()
             except (ArtifactRuntimeError, LLMError, OSError, RuntimeError) as exc:
                 LOGGER.exception("%s", error_title)
-                self.root.after(0, lambda: self._show_background_error(error_title, exc))
+                self.root.after(0, lambda exc=exc: self._show_background_error(error_title, exc))
                 return
             except Exception as exc:  # defensive UI boundary
                 LOGGER.exception("unexpected desktop error")
-                self.root.after(0, lambda: self._show_background_error(error_title, exc))
+                self.root.after(0, lambda exc=exc: self._show_background_error(error_title, exc))
                 return
             self.root.after(0, lambda: done(result))
 
