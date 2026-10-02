@@ -29,10 +29,19 @@ class RuntimeAssembly:
     discovery: DiscoveryReport
     load_report: LoadReport
     registry: CapabilityRegistry
+    # Phase 2.1：被用户配置禁用的插件（已发现、未加载、不进 Effective Registry）
+    disabled: list[DiscoveredPlugin] = field(default_factory=list)
 
     @property
     def ok(self) -> bool:
         return not self.discovery.errors and not self.load_report.failures
+
+    def disabled_extensions(self) -> set[str]:
+        """被禁用插件声明的扩展名集合（用于 ER-06 精确提示）。"""
+        extensions: set[str] = set()
+        for discovered in self.disabled:
+            extensions.update(discovered.manifest.extensions)
+        return extensions
 
 
 def assemble_runtime(
@@ -41,11 +50,14 @@ def assemble_runtime(
     use_env_plugin_path: bool = True,
     policy: PermissionPolicy | None = None,
     max_traces: int | None = None,
+    disabled_plugin_ids: set[str] | None = None,
 ) -> RuntimeAssembly:
-    """执行完整的 发现 → 加载 → 注册 流程，输出可观察的装配报告。
+    """执行完整的 发现 → 校验 Manifest → 应用禁用名单 → 加载 → 注册 流程，
+    输出可观察的装配报告（Phase 2.1 规格第 28 节 Rescan 链路）。
 
     单个插件失败被隔离记录（FR-L03），不阻断其他插件。
     """
+    disabled_ids = {str(item) for item in (disabled_plugin_ids or set())}
     discovery = discover_builtin()
     dirs = list(external_plugin_dirs or [])
     if use_env_plugin_path:
@@ -55,6 +67,7 @@ def assemble_runtime(
     registry = CapabilityRegistry()
     load_report = LoadReport()
     seen_plugin_ids: set[str] = set()
+    disabled: list[DiscoveredPlugin] = []
 
     for discovered in discovery.all_plugins:
         plugin_id = discovered.manifest.id
@@ -67,6 +80,11 @@ def assemble_runtime(
                     f"current dir: {discovered.plugin_dir})",
                 )
             )
+            continue
+        if plugin_id in disabled_ids:
+            # Phase 2.1：Disabled 插件仍可 Discovery / 展示 Manifest，
+            # 但不进入 Effective Registry、不参与 Routing（规格第 24 节）
+            disabled.append(discovered)
             continue
         try:
             loaded = load_plugin(discovered)
@@ -93,6 +111,7 @@ def assemble_runtime(
         discovery=discovery,
         load_report=load_report,
         registry=registry,
+        disabled=disabled,
     )
 
 

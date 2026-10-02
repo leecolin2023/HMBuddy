@@ -14,12 +14,18 @@ HMBuddy 是一个面向企业内网、可离线运行的办公助手项目。
   package 支持、CI 安装态验证。
 - **Phase 2：Desktop Entry & Human-in-the-loop Workspace**  
   在 Phase 1 运行时之上增加桌面入口，让用户可以选择工作区、选择文件、读取结构摘要，并在已配置模型时直接问答。
+- **Phase 2.1：Desktop Application Foundation**  
+  桌面从单页演示升级为可持续使用的应用：Home 四页导航、AppConfig（记住配置）、
+  AppState（记住最近工作区/文件/活动）、Plugin Manager（观察与启停文件能力）、
+  明确不实现 Session / TaskEngine / AgentLoop。
 
 规格说明：
 [Phase 1](./requirements/phase-1-local-office-artifact-runtime-v0.1.md) ·
 [Phase 1.1](./requirements/phase-1.1-pluggable-file-capability-runtime-v0.1.md) ·
 [Phase 1.1.1](./requirements/phase-1.1.1-plugin-runtime-contract-hardening-v0.1.md) ·
-[Phase 2](./requirements/phase-2-desktop-entry-v0.1.md)
+[Phase 2](./requirements/phase-2-desktop-entry-v0.1.md) ·
+[Phase 2.1](./requirements/phase-2.1-desktop-application-foundation-v0.1.md) ·
+[架构基线](./requirements/hmbuddy-architecture-baseline.md)
 历史文件提取工具 fce 的核心能力已拆解融入 `adapters/`（见"能力来源"）：
 支持格式扩展到 XLS / DOC / TXT / MD / CSV 等，PDF 增加矢量表格引擎（合并单元格、
 跨页续表）与可选 OCR，详见下文。
@@ -232,9 +238,16 @@ Phase 1 的设计原则（规格第 5 节）：
 
 ```text
 app.py                       Phase 1 CLI 演示入口
-desktop/                     Phase 2 桌面应用层
-  __init__.py
-  app.py                     Tkinter 页面、事件、后台线程
+application/                 Phase 2.1 产品应用层（简单应用逻辑，非 Kernel Primitive）
+  config.py                  AppConfig / EffectiveConfig（Default<User<Env<Runtime）
+  state.py                   AppState + Recent Workspaces/Activity（原子写、可恢复）
+  recent.py                  Recent 模型再导出
+  plugins.py                 Plugin Product View / System Status / LLM 客户端装配
+desktop/                     Phase 2/2.1 桌面应用层
+  app.py                     Composition Root（只组装，不承载页面逻辑）
+  controller.py              无头应用控制器（T8 Smoke 可无 GUI 验证）
+  shell.py                   四页导航 Shell（Home/Workspace/Plugins/Settings）
+  pages/                     home.py / workspace.py / plugins.py / settings.py
   presenter.py               Artifact → UI 文本格式化
 workspace/                   Workspace、ArtifactRef、Artifact/ArtifactBlock、错误类型
 plugin_runtime/              Phase 1.1 插件运行时内核
@@ -317,8 +330,9 @@ python evals/fixtures/generate_fixtures.py            # 重新生成测试样例
 - Context Eval：问题所需事实必须进入 Context（区分 Parser Error 与 Context Error）；
 - 插件化 Eval：Manifest 校验（T1）、发现/加载/故障隔离（T2/T7）、Registry priority（T3/AC-05）、路由（T4/AC-01/02）、权限（T8/AC-07）、fallback trace、外部 Markdown 插件验收（T6/AC-04）、Context Hardening（T9）；
 - 1.1.1 加固 Eval：权限强阻断、`.foo` 全新扩展名全链路、Manifest 权威、Provider 单次物化、external_plugin_dirs 直连、默认 Context 预算、Ref 信任域、可用性路由、Locator、success 语义、选择诊断、fallback allowlist、package 插件；
+- 2.1 产品 Eval：Config 优先级/Secret/原子写（T1/T7）、State 损坏恢复（T2）、Recent 行为（T3/T4）、Plugin 视图与配置（T5/T6）、Desktop 无头 Smoke 十条（T8）、架构守护（T9/AC-21）；
 - QA Eval：配置 LLM 环境变量后运行真实问答（关键词校验）；
-- Baseline：[evals/baseline-phase1.1.1-v0.1.json](./evals/baseline-phase1.1.1-v0.1.json)（当前；历史 phase1.1 / phase1-v0.1 / v0.2 见同目录）。
+- Baseline：[evals/baseline-phase2.1-v0.1.json](./evals/baseline-phase2.1-v0.1.json)（当前；历史 1.1.1 / 1.1 / phase1 见同目录）。
 
 桌面层新增的格式化逻辑放在 `desktop.presenter`，可以在无 GUI 环境下测试。
 

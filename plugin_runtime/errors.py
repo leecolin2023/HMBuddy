@@ -43,6 +43,20 @@ class CapabilityNotFoundError(PluginRuntimeError):
         super().__init__(message)
 
 
+class CapabilityDisabledError(PluginRuntimeError):
+    """Phase 2.1 ER-06：请求的扩展名只被已禁用插件支持——
+    必须明确提示"所需文件能力当前已禁用"，不得伪装成 Unsupported。"""
+
+    def __init__(self, extension: str, plugin_ids: list[str]):
+        self.extension = extension
+        self.plugin_ids = list(plugin_ids)
+        super().__init__(
+            f"所需文件能力当前已禁用：扩展名 {extension!r} 由插件 "
+            f"{self.plugin_ids} 提供，但它们已在设置中被禁用；"
+            "可在 Plugins 页面重新启用后重试。"
+        )
+
+
 class ProviderNotAvailableError(PluginRuntimeError):
     """有 Provider 但当前环境不可用（ER-P02 / BUG-008），附带可诊断原因。"""
 

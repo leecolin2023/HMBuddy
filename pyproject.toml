@@ -45,6 +45,7 @@ packages = [
     "adapters.ocr",
     "services",
     "llm",
+    "application",
     "desktop",
     "plugin_runtime",
     "plugins",

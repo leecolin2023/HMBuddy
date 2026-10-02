@@ -10,7 +10,7 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .errors import PluginManifestError
+from .errors import PluginCompatibilityError, PluginManifestError
 from .manifest import MANIFEST_FILENAME, PluginManifest, load_manifest
 
 PLUGIN_ENV_VAR = "HMBUDDY_PLUGIN_PATH"
@@ -50,7 +50,9 @@ def _scan_dir(plugin_dir: Path, source: str, report: DiscoveryReport) -> None:
             continue
         try:
             manifest = load_manifest(manifest_path)
-        except PluginManifestError as exc:
+        except (PluginManifestError, PluginCompatibilityError) as exc:
+            # FR-D03：Manifest 无效 / 不兼容都不执行插件代码、不影响其他插件，
+            # 错误进入报告供 Plugin Manager 展示
             report.errors.append((str(manifest_path), str(exc)))
             continue
         discovered = DiscoveredPlugin(

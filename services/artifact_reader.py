@@ -29,6 +29,7 @@ from plugin_runtime.contracts import (
 )
 from plugin_runtime.discovery import DiscoveryReport
 from plugin_runtime.errors import (
+    CapabilityDisabledError,
     CapabilityNotFoundError,
     ProviderExecutionError,
 )
@@ -103,29 +104,41 @@ class ArtifactReader:
         ocr_options=None,
         external_plugin_dirs: list[Path] | None = None,
         policy: PermissionPolicy | None = None,
+        disabled_plugin_ids: set[str] | None = None,
+        assembly=None,
     ):
         self.workspace = workspace
         self.ocr_options = ocr_options
         self.policy = policy
         self.max_file_size = max_file_size
-        if adapters is not None:
+        if assembly is not None:
+            # Phase 2.1：Desktop 等组件可以把已装配好的 Runtime 注入 Reader
+            self.discovery = assembly.discovery
+            self.load_report = assembly.load_report
+            self.disabled = assembly.disabled
+            runtime = assembly.runtime
+        elif adapters is not None:
             runtime, discovery, load_report = _build_compat_runtime(adapters)
             self.discovery = discovery
             self.load_report = load_report
+            self.disabled = []
         elif external_plugin_dirs is not None or policy is not None:
             # BUG-005 / AC-H05：显式插件目录或自定义 Policy 时，装配独立 Runtime
             assembly = assemble_runtime(
                 external_plugin_dirs=external_plugin_dirs,
                 policy=policy,
+                disabled_plugin_ids=disabled_plugin_ids,
             )
             runtime = assembly.runtime
             self.discovery = assembly.discovery
             self.load_report = assembly.load_report
+            self.disabled = assembly.disabled
         else:
             assembly = get_default_runtime()
             runtime = assembly.runtime
             self.discovery = assembly.discovery
             self.load_report = assembly.load_report
+            self.disabled = assembly.disabled
         self.runtime: CapabilityRuntime = runtime
 
     def read_artifact(
@@ -209,10 +222,24 @@ class ArtifactReader:
         try:
             result: CapabilityResult = self.runtime.execute(request, context)
         except CapabilityNotFoundError as exc:
-            # ER-01 兼容：没有任何 Provider 认领该扩展名 → UnsupportedArtifactTypeError
+            # Phase 2.1 ER-06：若扩展名只被"已禁用"插件声明，必须明确提示
+            # "所需文件能力当前已禁用"，不得伪装成 Unsupported File。
+            extension = resolved.suffix.lower()
+            disabled_claiming = sorted(
+                discovered.manifest.id
+                for discovered in getattr(self, "disabled", [])
+                if extension in discovered.manifest.extensions
+            )
             duration_ms = (time.perf_counter() - started) * 1000
+            if disabled_claiming:
+                disabled_error = CapabilityDisabledError(
+                    extension, disabled_claiming
+                )
+                self._log_error(resolved, "-", size, duration_ms, artifact_id, disabled_error)
+                raise disabled_error from exc
+            # ER-01 兼容：没有任何 Provider 认领该扩展名 → UnsupportedArtifactTypeError
             self._log_error(resolved, "-", size, duration_ms, artifact_id, exc)
-            raise UnsupportedArtifactTypeError(resolved, resolved.suffix.lower()) from exc
+            raise UnsupportedArtifactTypeError(resolved, extension) from exc
         except ProviderExecutionError as exc:
             # ER-02 兼容：Provider 执行期失败本质是解析失败，落回 ArtifactParseError
             # （adapter 记为 provider_id，原始异常保留在因果链上）

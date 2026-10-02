@@ -1,0 +1,82 @@
+{
+  "phase": "phase-2.1-desktop-application-foundation",
+  "spec_version": "V0.1（Architecture-aligned Rewrite）",
+  "recorded_at": "2026-10-02",
+  "architecture_baseline": "requirements/hmbuddy-architecture-baseline.md V0.1",
+  "previous_baselines": [
+    "evals/baseline-phase1.1.1-v0.1.json",
+    "evals/baseline-phase1.1-v0.1.json",
+    "evals/baseline-phase1-v0.2.json",
+    "evals/baseline-phase1-v0.1.json"
+  ],
+  "baseline_commit_before": "3dc5b8d",
+  "environment": {
+    "python": "3.12.3",
+    "platform": "Windows 10 x64"
+  },
+  "scope": {
+    "implemented": [
+      "application/ 产品应用层（ConfigStore/AppConfig/EffectiveConfig、AppState、Recent Workspaces/Activity、Plugin Product View、System Status）",
+      "per-user 数据目录（%APPDATA%\\HMBuddy，HMBUDDY_CONFIG_PATH/HMBUDDY_STATE_PATH/HMBUDDY_DATA_DIR 可覆盖）",
+      "Desktop Shell 四页导航（Home/Workspace/Plugins/Settings）+ Composition Root（desktop/app.py）+ 无头可测 AppController",
+      "Plugin Manager：消费现有 Runtime 报告（Enabled/Disabled/Load Failed/Incompatible/Unavailable），enable-disable 记录在 AppConfig，Rescan 走现有装配链路",
+      "ER-06：唯一 Provider 被禁用时明确提示\"所需文件能力当前已禁用\"（新增 CapabilityDisabledError）"
+    ],
+    "not_implemented_by_design": [
+      "Session / TaskEngine / RecentTaskEntry / AgentLoop / ToolRegistry / ExtensionHost / Planner",
+      "Artifact 写回、Workspace 内容索引、Plugin Marketplace、EXE/MSI",
+      "GUI 动态授权体系（Permission 仍属 Runtime Policy）"
+    ]
+  },
+  "acceptance_criteria": {
+    "AC-01 Architecture Alignment": "pass（无新增 Core Primitive；T9 架构守护测试强制）",
+    "AC-02 Unified Config": "pass（desktop/controller/application 统一走 EffectiveConfig，LLM 客户端不再散读环境变量）",
+    "AC-03 Config/State 分离": "pass（config.json / state.json 独立文件与语义）",
+    "AC-04 Per-user Data": "pass（默认 %APPDATA%\\HMBuddy，不写仓库/工作区）",
+    "AC-05 Atomic Persistence": "pass（tmp→flush→fsync→replace，测试断言无 .tmp 残留）",
+    "AC-06 Schema Version": "pass（config/state 均含 schema_version）",
+    "AC-07 Secret Boundary": "pass（明文 api_key 被拒收并忽略；序列化只含 api_key_env）",
+    "AC-08 Config Explainability": "pass（EffectiveValue 携带 Source + 环境变量名，Settings 页展示）",
+    "AC-09 Home": "pass（Controller 启动默认 current_page=home）",
+    "AC-10 Recent Workspace": "pass（open/dedupe/pin/limit-pinned-exempt/missing/remove/clear-keep-pinned）",
+    "AC-11 Recent Activity": "pass（workspace/artifact/artifact_qa 三类，resume_view 恢复上下文）",
+    "AC-12 No Fake Task Domain": "pass（无 RecentTaskEntry/TaskEngine，T9 守护测试）",
+    "AC-13 Future Session Compatibility": "pass（规格第 17/46 节迁移原则；实现只保存导航型活动）",
+    "AC-14 Plugin Manager Reuse": "pass（build_plugin_views 直接消费 DiscoveryReport/LoadReport/Registry/Policy）",
+    "AC-15 Plugin Enable/Disable": "pass（AppConfig.plugins.disabled_plugin_ids，不修改 plugin.json——测试断言文件未变）",
+    "AC-16 Plugin Rescan": "pass（单插件错误隔离；Discovery 阶段失败也进入视图）",
+    "AC-17 Permission Visible": "pass（Declared/Effective 分列展示）",
+    "AC-18 LLM Missing Degrades Gracefully": "pass（llm_configured=False 时 Workspace/Artifact 全部可用）",
+    "AC-19 Desktop Responsibilities Reduced": "pass（app.py 只组装；页面在 pages/；逻辑在 controller 与 application/）",
+    "AC-20 Existing Runtime Reused": "pass（未重写 Workspace/Artifact/Capability Runtime）",
+    "AC-21 No Agent Kernel Yet": "pass（T9）",
+    "AC-22 Regression": "pass（Phase 1/1.1/1.1.1/2 全部测试继续通过）"
+  },
+  "test_run": {
+    "command": "python -m pytest -q",
+    "passed": 243,
+    "skipped": 4,
+    "failed": 0,
+    "previous": "202 passed / 4 skipped（Phase 2.1 前）",
+    "growth_reason": "+41：Config(T1/优先级T7/Secret/原子写/schema)、State(T2/损坏恢复)、Recent Workspace(T3)、Recent Activity(T4)、Plugin 视图(T5/AC-14/17)、Plugin 配置(T6/AC-15/16)、Desktop 无头 Smoke(T8 十条)、架构守护(T9/AC-21)"
+  },
+  "desktop_smoke_t8": {
+    "1_启动进入 Home": "pass",
+    "2_打开 Workspace": "pass",
+    "3_Workspace 进入 Recent": "pass",
+    "4_重启后 Recent 仍在": "pass",
+    "5_Missing Workspace 正确展示": "pass（可 Remove/Relocate，不删历史）",
+    "6_Settings 修改模型配置": "pass（保存后 Effective/LLM Client 重建）",
+    "7_Plugin Manager 查看现有插件": "pass",
+    "8_Disabled External Plugin": "pass（状态 Disabled；读取报 CapabilityDisabledError）",
+    "9_Rescan 后状态正确": "pass",
+    "10_LLM 未配置仍可读取文件": "pass"
+  },
+  "known_limitations": [
+    "Desktop GUI 冒烟以无头 Controller 验证（T8 十条），Tk 视图人工验收；GUI 自动化不在本阶段",
+    "Recent Activity 的节流保存（规格第 37 节允许 debounce）当前为立即保存，数据量小不构成问题",
+    "API Key 仅从环境变量解析；未来 Secret Reference（凭据管理器）待 Minimal Agent Kernel 阶段",
+    "多进程/多实例状态合并不做（规格第 39 节）",
+    "python_requires 解析仅支持 '>=X.Y[.Z]' 形式"
+  ]
+}
