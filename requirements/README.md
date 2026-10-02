@@ -15,5 +15,6 @@
 - [Phase 1.1 — Pluggable File Capability Runtime V0.1](./phase-1.1-pluggable-file-capability-runtime-v0.1.md)
 - [Phase 1.1.1 — Plugin Runtime Contract Hardening V0.1](./phase-1.1.1-plugin-runtime-contract-hardening-v0.1.md)
 - [Phase 2 — Desktop Entry & Human-in-the-loop Workspace V0.1](./phase-2-desktop-entry-v0.1.md)
+- [Phase 2.1 — Desktop Application Foundation V0.1](./phase-2.1-desktop-application-foundation-v0.1.md)
 
-> Phase 1.1 将固定 Adapter 路由升级为 Plugin / Capability Runtime；Phase 1.1.1 专门收口代码审阅发现的权限强制、Manifest 权威性、Workspace 与 Registry 解耦、外部插件加载、Context Budget、Locator、Trace 与 CI 等问题。两者均不回滚或重编号已完成的 Phase 2；Phase 2 继续依赖稳定的 `read_artifact()` 门面。
+> Phase 1.1 将固定 Adapter 路由升级为 Plugin / Capability Runtime；Phase 1.1.1 专门收口代码审阅发现的权限强制、Manifest 权威性、Workspace 与 Registry 解耦、外部插件加载、Context Budget、Locator、Trace 与 CI 等问题。两者均不回滚或重编号已完成的 Phase 2；Phase 2 继续依赖稳定的 `read_artifact()` 门面。Phase 2.1 在已完成桌面入口之上新增应用状态层，聚焦 Config、Plugin Manager、Recent Workspace / Task Entry，不提前实现完整 Persistent Task Runtime 或 Agent Loop。
