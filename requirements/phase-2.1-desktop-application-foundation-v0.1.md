@@ -1,1372 +1,1905 @@
-
 # HMBuddy Phase 2.1 — Desktop Application Foundation 需求规格说明书
 
 **项目阶段：** Phase 2.1 / Desktop Application Foundation  
 **版本：** V0.1  
-**阶段主题：** Configuration / Plugin Management / Recent Workspace & Task Entry  
-**文档目的：** 在已完成 Phase 2 Desktop Entry 的基础上，为 HMBuddy 建立真正桌面应用所需要的最小“应用状态层”，统一解决配置管理、Plugin 管理、最近工作区与最近任务入口，使桌面端从一次性入口升级为可持续使用、可配置、可恢复上下文的办公应用。
+**状态：** Draft / Architecture-aligned Rewrite  
+**架构基线：** `requirements/hmbuddy-architecture-baseline.md` V0.1  
+**前置阶段：** Phase 1 / 1.1 / 1.1.1 / Phase 2  
+**文档目的：** 在 Phase 2 Desktop Entry 基础上，把 HMBuddy 从“一次性桌面入口”升级为可持续使用的本地办公应用；只建设产品壳、配置、状态和插件管理，不提前实现 Session、TaskEngine、AgentLoop、ToolRegistry、ExtensionHost 或其他 Agent Kernel 能力。
 
 ---
 
-## 1. 为什么新建 Phase 2.1，而不是修改 Phase 2
+# 1. 为什么重构 Phase 2.1
 
-Phase 2 已经完成并形成明确的历史合同，其核心问题是：
+Phase 2.1 第一版规格形成时，HMBuddy 尚未建立统一架构总纲，因此其中包含了较多“Application Service / Recent Task / Future Persistent Task”式设计。
 
-> 用户能否启动一个桌面界面，选择 Workspace、读取 Artifact，并在同一界面完成查看与问答？
+新的 Canonical Architecture 已明确：
 
-Phase 2 已经实现并验收了桌面启动入口、Workspace 选择、文件列表、Artifact 读取、文件概览、LLM 问答、后台线程和 Windows 启动脚本。
+> **产品功能向 WorkBuddy 学习，Agent Harness 采用 Pi 式极简原语；产品上的 Task 未来统一映射为 Session + metadata，而不是另建 TaskEngine。**
 
-因此 Phase 2 不应再被反向扩写。
+因此 Phase 2.1 需要重新收敛。
 
-本次新增的三类能力——配置管理、Plugin 管理、最近工作区 / 最近任务入口——解决的是另一个问题：
+本次重构不改变 Phase 2.1 的产品目标：
 
-> **HMBuddy 能否记住用户的应用级偏好和使用上下文，并把已有 Plugin Runtime 变成用户可观察、可控制的桌面能力？**
+- 有 Home；
+- 能记住配置；
+- 能记住最近工作区；
+- 能管理 Plugin；
+- 能恢复基本使用上下文；
+- Desktop 从单页面演示升级为长期可用应用。
 
-这已经超出 Desktop Entry，但又尚未进入完整 Agent / Persistent Task Runtime。
+但删除或延后会制造第二套 Agent Domain 的内容：
 
-因此阶段关系确定为：
+- 不实现 RecentTaskEntry 领域模型；
+- 不实现 Task 状态机；
+- 不实现 Persistent Task Runtime；
+- 不实现 Session；
+- 不实现 Planner；
+- 不实现 AgentLoop；
+- 不实现 ToolRegistry；
+- 不实现 ExtensionHost。
 
-Phase 2 Desktop Entry  
-→ Phase 2.1 Desktop Application Foundation  
-→ Future Phase: Workspace Search / Artifact Update / Persistent Task / Agent Loop
+Phase 2.1 只做：
 
-Phase 2.1 是“桌面入口”与“长期桌面工作台”之间的应用基础层。
-
----
-
-## 2. 当前系统基础
-
-### 2.1 Phase 1 — Artifact Runtime
-
-已有 Workspace、ArtifactRef、Artifact、ArtifactBlock、read_artifact() 以及 Office / PDF / Text 等文件读取能力。
-
-### 2.2 Phase 1.1 / 1.1.1 — Plugin Runtime
-
-已有 Plugin Manifest、Plugin Discovery、Plugin Loader、Capability Registry、Capability Router、Permission Policy、Runtime Trace、Built-in / External Plugin，以及 HMBUDDY_PLUGIN_PATH 外部插件目录。
-
-Plugin Runtime 已经是实际运行能力，而不是未来设计。
-
-### 2.3 Phase 2 — Desktop Entry
-
-已有桌面页面可以完成：
-
-选择 Workspace → 查看文件 → 读取 Artifact → 查看概览 → LLM 问答。
-
-但桌面端目前基本属于“无记忆应用”：
-
-- 关闭后不会记住最近 Workspace；
-- 模型配置依赖环境变量；
-- Plugin Runtime 没有桌面可视化管理入口；
-- 没有应用级 Config Store；
-- 没有 Recent State；
-- 没有 Home / Recent Entry；
-- 没有真正意义上的“继续上次工作”。
-
-Phase 2.1 即解决这些问题。
+> **Desktop Application Foundation。**
 
 ---
 
-## 3. Phase 2.1 核心问题
+# 2. Architecture Alignment
 
-本阶段只回答：
+## 2.1 Architecture Baseline
 
-> **HMBuddy 能否在保持本地优先、离线友好和插件化架构的前提下，建立统一的应用配置与本地状态存储，使用户可以管理模型与路径配置、观察和启停插件、从最近 Workspace 或最近 Task 继续工作？**
-
-目标体验：
-
-启动 HMBuddy  
-→ Home  
-→ 新工作区 / 最近工作区 / 最近任务  
-→ 恢复工作上下文
-
-同时提供：
-
-Settings  
-- General  
-- Model  
-- Paths  
-- Plugins
-
-Plugin Manager  
-- 已发现插件  
-- 状态 / 来源 / 版本  
-- Capability  
-- 权限  
-- 启用 / 禁用  
-- Discovery / Load Error
+```text
+requirements/hmbuddy-architecture-baseline.md
+Version: V0.1
+```
 
 ---
 
-## 4. 阶段目标
+## 2.2 Product Capability
 
-### G1. 建立统一 App Config
+本阶段新增的产品能力：
 
-系统必须有正式的应用配置模型，而不是由 Desktop 各处直接读取环境变量。
+```text
+Home
+Settings
+Application Config
+Application State
+Recent Workspaces
+Recent Activity
+Plugin Manager
+System Status
+Desktop Navigation Shell
+```
 
-配置至少覆盖：
-
-- LLM Base URL；
-- LLM Model；
-- API Key 的引用方式；
-- 外部 Plugin 路径；
-- OCR / Model 目录；
-- Plugin 启停偏好；
-- 最近记录数量；
-- 是否恢复上次 Workspace；
-- 其他真正属于用户偏好的桌面设置。
-
-调用方统一通过 Config Service 获取配置。
-
-禁止 Desktop 页面把 os.environ.get(...) 散落成事实上的配置系统。
-
-### G2. 区分 Config 与 State
-
-Phase 2.1 必须明确两个完全不同的对象。
-
-Config 表示：
-
-> 用户明确设置了什么。
-
-例如模型、服务地址、Plugin 路径、Plugin enabled / disabled、Recent Limit。
-
-State 表示：
-
-> 用户最近做过什么、应用上次停在哪里。
-
-例如最近 Workspace、最近 Task、最后打开的 Workspace、最后活动时间。
-
-二者不得混成一个 JSON。
-
-目标关系：
-
-AppConfig = 用户主动设置、相对稳定。  
-AppState = 应用运行历史、自动更新。
-
-这样未来才能分别处理配置迁移、历史清理、策略覆盖、隐私清理和 Task Runtime 接入。
-
-### G3. 提供桌面配置管理入口
-
-桌面端必须有 Settings 页面。
-
-至少包含：
-
-- General；
-- Model；
-- Paths；
-- Plugins。
-
-V0.1 不追求复杂设置中心，但必须解决“改配置不需要修改源码或手工改环境变量”的问题。
-
-### G4. 将现有 Plugin Runtime 暴露为 Plugin Manager
-
-Plugin Manager 必须直接基于现有 DiscoveryReport、PluginManifest、LoadReport、CapabilityRegistry、PermissionPolicy 展示真实状态。
-
-禁止 Desktop 再维护一套独立 Plugin 清单。
-
-用户至少可以：
-
-- 查看已发现插件；
-- 区分 Built-in / External；
-- 查看版本；
-- 查看支持扩展名；
-- 查看 Capability；
-- 查看声明权限；
-- 查看加载状态；
-- 查看加载错误；
-- 启用 / 禁用插件；
-- 增加 / 删除 External Plugin Directory；
-- 手动重新扫描 Plugin。
-
-本阶段不是 Plugin Marketplace。
-
-### G5. 建立 Recent Workspace
-
-Home 页面必须展示最近使用的 Workspace。
-
-至少记录：
-
-- Workspace Path；
-- Display Name；
-- Last Opened At；
-- Pinned；
-- Last Selected Artifact，可选引用。
-
-支持：
-
-- 点击直接重新打开；
-- Pin / Unpin；
-- 从记录中移除；
-- 清空 Recent Workspace；
-- 路径不存在时明确标记 Missing，而不是启动报错退出。
-
-### G6. 建立 Recent Task Entry
-
-Phase 2.1 需要建立“最近任务入口”，但不得因此提前实现完整 Persistent Task Runtime。
-
-这里的 Task 定义为：
-
-> 一个可供桌面重新进入的工作上下文引用，而不是正在执行的 Agent 状态机。
-
-Phase 2.1 只定义 RecentTaskEntry 元数据：
-
-- task_id；
-- title；
-- task_type；
-- workspace_path；
-- artifact_refs；
-- status；
-- created_at；
-- updated_at；
-- resume_target。
-
-当前可以存在的 task_type，例如 artifact_qa、document_review、workspace_session。
-
-“继续任务”在 Phase 2.1 的语义是：
-
-> 恢复 Workspace / Artifact / 页面入口等可恢复 UI Context。
-
-不要求恢复 Planner 内部状态、Tool Call Stack、模型隐藏状态、Agent execution checkpoint、未完成代码执行或任意 Python 对象。
-
-这些属于未来 Persistent Task Runtime。
-
-### G7. 支持启动后的 Home Entry
-
-HMBuddy 启动后不再强制首先面对空白 Workspace 页面。
-
-应进入 Home，至少提供：
-
-- 打开工作区；
-- 打开文件；
-- 最近工作区；
-- 最近任务；
-- 系统状态摘要。
-
-系统状态摘要至少覆盖：
-
-- LLM Ready / Not Configured / Error；
-- Plugins Loaded / Disabled / Error；
-- OCR / Model Directory 状态。
-
-Home 是导航入口，不承担业务处理。
+这些属于 WorkBuddy-like Product Layer。
 
 ---
 
-## 5. 非目标
+## 2.3 Kernel Primitives Used
 
-### 5.1 不实现完整 Persistent Task Engine
+本阶段只使用已经存在的：
 
-不实现 Task Graph、Step 状态机、Checkpoint、Agent 中断恢复、Tool Call Replay、Planner State、多步骤自动执行恢复。
+```text
+Workspace
+Artifact
+```
 
-Recent Task 只是桌面级引用。
-
-### 5.2 不实现 Plugin Marketplace
-
-不实现在线插件商店、自动下载、自动升级、在线依赖解析、插件评分和插件账号系统。
-
-企业内网环境下，本阶段只管理已经存在于本地的插件。
-
-### 5.3 不自动修改 Plugin 文件
-
-启用 / 禁用不得修改 plugin.json 或 plugin.py。
-
-用户偏好必须存放在 App Config。
-
-Plugin Manifest 仍然是插件自身事实的权威来源。
-
-### 5.4 不在 Config 中保存明文 Secret
-
-Phase 2.1 V0.1 不在普通 JSON 配置中保存 API Key、Password、Token。
-
-允许保存 api_key_env，例如 HMBUDDY_LLM_API_KEY，或者只显示当前 Secret 为 Available / Missing。
-
-未来如确有需要，再引入 Windows Credential Manager、OS Keyring 或企业 Secret Service。
-
-### 5.5 不实现 Workspace 内容索引
-
-Recent Workspace 是导航历史，不是 RAG、Semantic Search、文件内容索引或 Embedding Store。
-
-### 5.6 不包含 EXE / MSI 打包
-
-Phase 2.1 只建立桌面应用内部基础。
-
-不要求 PyInstaller、Nuitka、MSI、自动更新或安装器。
-
-Packaging 应在应用配置、Plugin 目录、数据目录稳定后单独立项。
+以及已有 File Capability Runtime。
 
 ---
 
-## 6. 核心架构
+## 2.4 Kernel Primitives NOT Implemented
 
-Phase 2.1 引入新的 Application State Layer。
+本阶段明确不实现：
 
-Desktop  
-- Home  
-- Workspace  
-- Settings  
-- Plugins  
-
-↓  
-
-Application Services  
-- ConfigService  
-- AppStateService  
-- PluginManagementService  
-- RecentService  
-
-↓  
-
-Local Stores  
-- config.json  
-- state.json  
-
-↓  
-
-Existing Runtime  
-- Workspace  
-- Artifact  
-- Plugin Runtime  
-- LLM  
-- Capability Registry
-
-原则：
-
-> Desktop 不直接读写 JSON；Desktop 调用 Application Service。
-
----
-
-## 7. 本地数据目录
-
-Phase 2.1 必须正式定义 HMBuddy 的用户数据目录。
-
-Windows 默认建议：
-
-%APPDATA%\HMBuddy\  
-- config.json  
-- state.json  
-- logs\
-
-未来打包后仍使用同一目录。
-
-不得默认把用户配置和运行历史写入 Git Repository、Project Root、plugins 或 workspace。
+```text
+Session
+AgentLoop
+ToolRegistry
+ExtensionHost
+```
 
 原因：
 
-- 避免 Git 污染；
-- 避免多个项目副本产生不同配置；
-- 为未来 EXE / MSI 做准备；
-- 用户配置属于用户，而不是源码。
-
-允许通过 HMBUDDY_CONFIG_PATH 和 HMBUDDY_STATE_PATH 覆盖默认位置，以支持开发测试、企业集中部署和 Portable Mode 实验。
-
-Portable Mode 本身不是本阶段验收项。
+> Phase 2.1 是产品应用基础阶段，不是 Minimal Agent Kernel 阶段。
 
 ---
 
-## 8. AppConfig 设计
+## 2.5 Tools
 
-建议首版逻辑结构：
+```text
+None
+```
 
-schema_version: 1
-
-llm:
-- base_url
-- model
-- api_key_env
-
-paths:
-- external_plugin_dirs
-- model_dir
-
-plugins:
-- disabled_plugin_ids
-
-desktop:
-- restore_last_workspace
-- recent_workspace_limit
-- recent_task_limit
-
-### 8.1 schema_version
-
-必须存在。
-
-未来字段结构变化时必须经过显式 Migration，不得假设 Config 永远不会变化。
+Phase 2.1 不向模型暴露 Agent Tool。
 
 ---
 
-## 9. 配置来源与优先级
+## 2.6 Skills
 
-必须定义确定性的配置覆盖顺序。
+```text
+None
+```
 
-推荐：
+SenseWright 等 Skill 在后续 Minimal Agent Kernel 形成后再接入。
 
-1. Built-in Defaults  
-2. User config.json  
-3. Environment Variables  
-4. Explicit Runtime Arguments
+---
 
-越下面优先级越高。
+## 2.7 Extensions
+
+```text
+None
+```
+
+本阶段不为了 Config / Plugin Manager 引入 ExtensionHost。
+
+---
+
+## 2.8 Capability Plugins
+
+复用当前已有 File Capability Plugins：
+
+- DOCX；
+- PDF；
+- XLSX；
+- PPTX；
+- XLS；
+- DOC；
+- Text；
+- External Plugins。
+
+不新增新的 Capability Plugin Contract。
+
+---
+
+## 2.9 New Core Primitive
+
+```text
+No
+```
+
+---
+
+## 2.10 Architecture Deviation
+
+```text
+None
+```
+
+---
+
+# 3. Phase 2.1 核心问题
+
+Phase 2 已经回答：
+
+> 用户能否通过桌面界面选择 Workspace、读取 Artifact、查看内容并进行文档问答？
+
+Phase 2.1 只回答：
+
+> **HMBuddy 能否成为一个可以每天重复打开、记住配置、重新进入最近工作环境、理解当前 Plugin 能力状态的本地桌面应用？**
+
+目标体验：
+
+```text
+Launch HMBuddy
+      ↓
+Home
+├─ Open Workspace
+├─ Open File
+├─ Recent Workspaces
+├─ Recent Activity
+└─ System Status
+
+Settings
+├─ General
+├─ Model
+└─ Paths
+
+Plugins
+├─ Installed / Discovered
+├─ Status
+├─ Capability
+├─ Permission
+├─ Enable / Disable
+└─ Rescan
+```
+
+本阶段不回答：
+
+> Agent 如何自主完成多步骤任务？
+
+这是后续 Minimal Agent Kernel 的职责。
+
+---
+
+# 4. 阶段目标
+
+## G1. 建立统一 AppConfig
+
+不再由 Desktop 页面和 LLM Client 各自散读环境变量。
+
+AppConfig 至少覆盖：
+
+- LLM Base URL；
+- LLM Model；
+- API Key 来源；
+- External Plugin Directories；
+- OCR / Model Directory；
+- Plugin enable / disable；
+- Restore Last Workspace；
+- Recent Workspace Limit；
+- Recent Activity Limit。
+
+调用方通过一个统一配置入口获得 Effective Config。
+
+---
+
+## G2. 建立最小 AppState
+
+AppState 表达：
+
+> 应用最近发生过什么。
+
+只保存可恢复的轻量 UI / Workspace 元数据。
 
 例如：
 
-User Config 中 model = qwen。  
-环境变量 HMBUDDY_LLM_MODEL = deepseek。  
-最终 Effective Config 中 model = deepseek。
+- last workspace；
+- last selected artifact；
+- recent workspaces；
+- recent activity；
+- last active page。
 
-Settings 页面必须能够显示：
+AppState 不是：
 
-- 当前值；
-- 来源；
-- 是否可编辑。
-
-如果环境变量覆盖了 Config，用户在 UI 中修改 Config 后不得假装修改立即生效。
-
-应明确提示：
-
-> 当前值由环境变量 HMBUDDY_LLM_MODEL 覆盖。
-
-这是 Config 可解释性的必要要求。
+- Session Store；
+- Task Store；
+- Chat History；
+- Agent Checkpoint；
+- Tool Call Store。
 
 ---
 
-## 10. Config Service
+## G3. 建立 Home
 
-建议契约：
+启动应用默认进入 Home，而不是空白 Workspace 页面。
 
-ConfigService.load() → ConfigSnapshot  
-ConfigService.get() → AppConfig  
-ConfigService.update(patch) → AppConfig  
-ConfigService.validate(config) → ValidationResult  
-ConfigService.save(config)  
-ConfigService.reload() → ConfigSnapshot
-
-ConfigSnapshot 至少包含：
-
-- effective_config；
-- field_sources；
-- validation_warnings；
-- config_path。
-
-Desktop 不负责合并环境变量。
-
----
-
-## 11. Config 写入要求
-
-### FR-C01 Atomic Write
-
-不得直接原地覆盖 config.json。
-
-推荐流程：
-
-config.json.tmp → flush → replace → config.json。
-
-避免应用异常退出导致配置半写入。
-
-### FR-C02 Invalid Config
-
-Config 非法时：
-
-- 不允许应用直接崩溃；
-- 记录错误；
-- 回退 Built-in Defaults；
-- Settings 显示 Config Error；
-- 保留原文件供排查。
-
-### FR-C03 Unknown Field
-
-V0.1 应优先兼容未来字段。
-
-未知字段不影响已知字段读取，不应静默改变运行语义，保存时尽量保留。
-
----
-
-## 12. AppState 设计
-
-AppState 与 AppConfig 分开。
-
-建议包含：
-
-schema_version: 1
-
-last_session:
-- workspace_path
-- selected_artifact_path
-
-recent_workspaces: []
-
-recent_tasks: []
-
-State 可以由应用自动更新。
-
----
-
-## 13. Recent Workspace 数据模型
-
-建议 RecentWorkspace 包含：
-
-- workspace_id；
-- path；
-- display_name；
-- last_opened_at；
-- pinned；
-- last_artifact_path。
-
-workspace_id 不得仅使用列表 index，建议基于 canonical path 产生稳定 ID。
-
-默认排序：
-
-Pinned 优先，然后 last_opened_at 降序。
-
-数量由 desktop.recent_workspace_limit 控制。
-
-Pinned Workspace 不应因为达到 Recent Limit 自动删除。
-
----
-
-## 14. Recent Workspace 行为
-
-### RW-01 打开
-
-点击 Recent Workspace 后：
-
-1. 检查路径；
-2. 创建 Workspace；
-3. 刷新文件；
-4. 更新 last_opened_at；
-5. 进入 Workspace 页面。
-
-### RW-02 Missing
-
-路径不存在时显示“路径不存在”，并提供：
-
-- 移除记录；
-- 重新定位。
-
-不得直接删除历史，也不得应用崩溃。
-
-### RW-03 Clear
-
-支持 Clear Recent Workspaces。
-
-Pinned 项默认保留，除非用户明确选择全部清理。
-
----
-
-## 15. Recent Task 数据模型
-
-Phase 2.1 的 Task 是导航引用，不是执行对象。
-
-建议 RecentTaskEntry 包含：
-
-- task_id；
-- title；
-- task_type；
-- workspace_path；
-- artifact_paths；
-- status；
-- created_at；
-- updated_at；
-- resume_target。
-
-status V0.1 可使用：
-
-- active；
-- paused；
-- completed；
-- failed；
-- unknown。
-
-这里的状态是 UI / History 状态，不代表 Agent Engine 的强一致执行状态。
-
----
-
-## 16. Resume Target
-
-Resume Target 表达：
-
-> 点击“继续”以后桌面应用应该导航到哪里。
-
-例如目标可以是 Workspace 页面，也可以是 Artifact QA 页面，并携带 workspace_path 与 artifact_path。
-
-禁止在 State 中序列化：
-
-- Python Object；
-- LLM Client；
-- Adapter Instance；
-- Plugin Provider Instance；
-- Tkinter Widget；
-- Thread；
-- Tool Call Stack。
-
-Recent Task 必须是纯数据引用。
-
----
-
-## 17. Current Phase 的 Task 产生方式
-
-Phase 2.1 不要求建立通用 Task Engine。
-
-当前可以由 Desktop 在以下场景产生 RecentTaskEntry：
-
-### artifact_qa
-
-用户打开 Workspace、打开 Artifact、发起文档问答后，可以形成 task_type = artifact_qa。
-
-### workspace_session
-
-用户持续在同一个 Workspace 工作，可以形成 task_type = workspace_session。
-
-但：
-
-> 不得为了“生成任务记录”而改变 Phase 2 现有业务流程。
-
-Recent Task 是旁路记录。
-
----
-
-## 18. Task History 隐私边界
-
-State 默认不得存储：
-
-- Artifact 正文；
-- 完整 Context；
-- LLM Prompt；
-- LLM Answer；
-- API Key；
-- Office 文件内容。
-
-V0.1 只保存恢复入口所需要的元数据。
-
-如果未来要保存完整 Chat History，应作为独立需求讨论。
-
----
-
-## 19. Plugin Manager 页面
-
-Plugin Manager 至少展示：
-
-- Name；
-- Version；
-- Source；
-- Status。
-
-建议状态至少包括：
-
-- Enabled；
-- Disabled；
-- Load Failed；
-- Incompatible；
-- Unavailable。
-
-支持搜索或过滤，但复杂筛选不是强制项。
-
-点击 Plugin 后进入详情。
-
----
-
-## 20. Plugin Detail
+Home 是产品导航入口，不承担业务逻辑。
 
 至少展示：
 
-### Identity
+- Open Workspace；
+- Open File；
+- Recent Workspaces；
+- Recent Activity；
+- System Status。
+
+---
+
+## G4. 建立 Recent Workspace
+
+用户再次启动时可以直接回到最近 Workspace。
+
+至少支持：
+
+- open；
+- pin；
+- unpin；
+- remove；
+- missing path；
+- clear recent。
+
+---
+
+## G5. 建立 Recent Activity，而不是提前建立 Task Domain
+
+旧规格中的 `RecentTaskEntry` 删除。
+
+Phase 2.1 改为：
+
+```text
+RecentActivityEntry
+```
+
+它只表达：
+
+> 用户最近在哪个 Workspace / Artifact / 页面做过什么，可从哪里重新进入。
+
+例如：
+
+```text
+打开了“需求说明书.docx”
+在“制度库项目”工作区进行文档问答
+最近查看“财务分析报告.xlsx”
+```
+
+它不是产品 Task 的最终数据模型。
+
+未来 Minimal Agent Kernel 实现 Session 后：
+
+```text
+Product Task
+   ↓
+Session + metadata
+```
+
+Recent Activity 中与 Agent 工作相关的入口应迁移为 Session Index，而不是继续发展 RecentActivity 为 TaskEngine。
+
+---
+
+## G6. 将现有 Plugin Runtime 暴露给用户
+
+Plugin Manager 只做：
+
+> **观察和控制已有 File Capability Runtime。**
+
+它必须直接消费现有：
+
+- DiscoveryReport；
+- PluginManifest；
+- LoadReport；
+- CapabilityRegistry；
+- PermissionPolicy；
+- CapabilityCatalog。
+
+禁止 Desktop 维护第二套 Plugin Registry。
+
+---
+
+## G7. 建立 Settings
+
+Settings 至少提供：
+
+```text
+General
+Model
+Paths
+Plugins
+```
+
+用户不再需要修改源码或手工编辑环境变量才能完成基础设置。
+
+---
+
+## G8. 建立 Desktop Shell / Navigation
+
+Desktop 不再把所有职责继续堆进一个 `desktop/app.py`。
+
+但本阶段也不建设复杂前端框架。
+
+目标只是形成：
+
+```text
+Desktop Shell
+├─ Home
+├─ Workspace
+├─ Plugins
+└─ Settings
+```
+
+Artifact 仍作为 Workspace 下的工作视图。
+
+---
+
+# 5. 非目标
+
+## 5.1 不实现 Session
+
+架构总纲已将 Session 定义为未来 Kernel Primitive。
+
+Phase 2.1 不提前实现半套 Session。
+
+---
+
+## 5.2 不实现 TaskEngine
+
+禁止引入：
+
+- TaskGraph；
+- TaskStep；
+- WorkflowStateMachine；
+- StepDependency；
+- Retry Scheduler；
+- Planner State；
+- Task Database。
+
+---
+
+## 5.3 不实现 AgentLoop
+
+不新增：
+
+- model tool calling loop；
+- planning；
+- autonomous file selection；
+- autonomous execution。
+
+---
+
+## 5.4 不实现 ToolRegistry
+
+本阶段没有 Agent，因此没有必要建立 Agent Tool Contract。
+
+---
+
+## 5.5 不实现 ExtensionHost
+
+Plugin Manager 管的是已有 File Capability Plugin，不是未来 Agent Extension。
+
+不要因为产品页面叫“Plugins”就提前实现 Agent Extension Framework。
+
+---
+
+## 5.6 不实现 Skills
+
+不实现：
+
+- Skill Discovery；
+- Skill Registry；
+- Skill Context Injection。
+
+---
+
+## 5.7 不实现 Automation / MCP / Memory / Multi-Agent
+
+这些后续优先通过 Extension 实现。
+
+---
+
+## 5.8 不实现 Artifact 写回
+
+不实现：
+
+- create；
+- edit；
+- patch；
+- version；
+- diff。
+
+---
+
+## 5.9 不实现 Workspace 内容索引
+
+Recent Workspace 不是：
+
+- RAG；
+- Embedding；
+- Semantic Search；
+- Full-text index。
+
+---
+
+## 5.10 不实现 Plugin Marketplace
+
+只管理本地已经存在的 Capability Plugins。
+
+---
+
+## 5.11 不实现 EXE / MSI
+
+本阶段不做 Installer / Auto Update。
+
+---
+
+# 6. 目标架构
+
+```text
+┌──────────────────────────────────────────┐
+│ Desktop Product Layer                    │
+│ Home / Workspace / Plugins / Settings    │
+└───────────────────┬──────────────────────┘
+                    │
+                    ▼
+┌──────────────────────────────────────────┐
+│ Minimal Application State                │
+│ AppConfig / AppState / Recent Views      │
+└───────────────────┬──────────────────────┘
+                    │
+       ┌────────────┼─────────────┐
+       ▼            ▼             ▼
+   Workspace    Plugin Runtime    LLM Client
+       │            │
+       ▼            ▼
+   Artifact     Capability
+               Registry
+```
+
+注意：
+
+> Phase 2.1 不引入新的 Agent Runtime 层。
+
+未来 Minimal Agent Kernel 会放在 Product Layer 与现有 Runtime 之间，但不属于本阶段。
+
+---
+
+# 7. 模块设计原则
+
+Phase 2.1 不采用重型：
+
+```text
+Domain Service
+Repository
+Use Case
+CQRS
+Event Bus
+Application Framework
+```
+
+只引入足够小的模块。
+
+推荐：
+
+```text
+application/
+├─ config.py
+├─ state.py
+├─ recent.py
+└─ plugins.py
+```
+
+也允许更少文件，只要职责清楚。
+
+这些模块是：
+
+> 简单应用逻辑模块。
+
+不是未来 Kernel Primitive。
+
+---
+
+# 8. Desktop 目录建议
+
+```text
+desktop/
+├─ app.py
+├─ shell.py
+├─ pages/
+│  ├─ home.py
+│  ├─ workspace.py
+│  ├─ plugins.py
+│  └─ settings.py
+└─ presenter.py
+```
+
+不要求为了满足目录图机械拆分。
+
+原则：
+
+> 当单个文件职责已经明显过多时再拆。
+
+---
+
+# 9. 用户数据目录
+
+必须正式建立 HMBuddy per-user data directory。
+
+Windows 默认建议：
+
+```text
+%APPDATA%\HMBuddy\
+├─ config.json
+├─ state.json
+└─ logs/
+```
+
+开发和企业部署允许通过：
+
+```text
+HMBUDDY_CONFIG_PATH
+HMBUDDY_STATE_PATH
+```
+
+覆盖。
+
+用户状态不得默认写入：
+
+- Git Repository；
+- Project Root；
+- Workspace；
+- plugins directory。
+
+---
+
+# 10. AppConfig
+
+建议 V0.1：
+
+```yaml
+schema_version: 1
+
+llm:
+  base_url:
+  model:
+  api_key_env: HMBUDDY_LLM_API_KEY
+
+paths:
+  external_plugin_dirs: []
+  model_dir:
+
+plugins:
+  disabled_plugin_ids: []
+
+desktop:
+  restore_last_workspace: true
+  recent_workspace_limit: 10
+  recent_activity_limit: 20
+```
+
+---
+
+# 11. Config Source Precedence
+
+必须保持确定性：
+
+```text
+Built-in Default
+       ↓
+User config.json
+       ↓
+Environment Variables
+       ↓
+Explicit Runtime Arguments
+```
+
+越下面优先级越高。
+
+UI 必须能解释当前 Effective Value 来源。
+
+例如：
+
+```text
+Model: deepseek
+Source: Environment
+HMBUDDY_LLM_MODEL
+```
+
+如果环境变量正在覆盖用户 Config：
+
+> UI 不得假装修改 config.json 就会改变当前 Effective Value。
+
+---
+
+# 12. Config API
+
+不要求复杂 Service Framework。
+
+一个简单契约即可：
+
+```python
+load_config(...)
+save_config(...)
+resolve_effective_config(...)
+validate_config(...)
+```
+
+如果使用类，也保持极小：
+
+```python
+ConfigStore
+```
+
+不要扩成多层 Repository / Manager / Service。
+
+---
+
+# 13. Config 持久化要求
+
+## FR-C01 Atomic Write
+
+使用：
+
+```text
+config.json.tmp
+→ flush
+→ replace
+→ config.json
+```
+
+---
+
+## FR-C02 Invalid Config
+
+非法配置：
+
+- 应用继续启动；
+- 使用 Built-in Defaults / 可解析部分；
+- Settings 显示错误；
+- 原文件保留供排查。
+
+---
+
+## FR-C03 Secret
+
+config.json 不保存明文：
+
+- API Key；
+- Password；
+- Token。
+
+只保存：
+
+```text
+api_key_env
+```
+
+或未来 Secret Reference。
+
+---
+
+## FR-C04 schema_version
+
+Config 第一版就必须有 schema_version。
+
+---
+
+# 14. AppState
+
+建议 V0.1：
+
+```yaml
+schema_version: 1
+
+last_view:
+  page: home
+  workspace_path:
+  artifact_path:
+
+recent_workspaces: []
+
+recent_activity: []
+```
+
+State 与 Config 必须分开。
+
+---
+
+# 15. 为什么删除 RecentTaskEntry
+
+旧规格建立：
+
+```text
+RecentTaskEntry
+task_id
+task_type
+status
+resume_target
+...
+```
+
+新架构下这会产生两个问题。
+
+### 问题 1
+
+未来 Product Task 的正式底层已经确定为：
+
+```text
+Session + metadata
+```
+
+如果 Phase 2.1 先造 RecentTaskEntry，未来必须：
+
+```text
+RecentTask
+→ Session
+```
+
+重复迁移。
+
+### 问题 2
+
+为了让 RecentTask 看起来完整，会逐渐诱导加入：
+
+- status machine；
+- task history；
+- artifact relations；
+- conversation history；
+- resume state。
+
+最终提前长出 TaskEngine。
+
+因此 Phase 2.1 只保存：
+
+```text
+RecentActivityEntry
+```
+
+作为 UI 导航历史。
+
+---
+
+# 16. RecentActivityEntry
+
+建议：
+
+```text
+entry_id
+activity_type
+workspace_path
+artifact_path
+title
+last_opened_at
+resume_view
+```
+
+activity_type V0.1 可以只包括：
+
+```text
+workspace
+artifact
+artifact_qa
+```
+
+不得保存：
+
+- Agent execution state；
+- Tool Call Stack；
+- LLM hidden state；
+-完整 Prompt；
+-完整 Answer；
+- Artifact 正文。
+
+---
+
+# 17. Future Session Migration
+
+未来 Minimal Agent Kernel 建立 Session 后：
+
+```text
+Recent Activity
+      │
+      ├─ 普通 Workspace / Artifact activity
+      │      → 继续保留
+      │
+      └─ Agent Task
+             → Session Index
+```
+
+Home 产品层可以显示统一的：
+
+```text
+Recent Work
+```
+
+但来源可以是：
+
+- Workspace Activity；
+- Artifact Activity；
+- Session。
+
+这属于 Product Aggregation，不需要统一成一个 Task Engine。
+
+---
+
+# 18. Recent Workspace
+
+建议模型：
+
+```text
+workspace_id
+path
+display_name
+last_opened_at
+pinned
+last_artifact_path
+```
+
+排序：
+
+```text
+Pinned
+↓
+last_opened_at DESC
+```
+
+Pinned 项不因 recent limit 自动淘汰。
+
+---
+
+# 19. Recent Workspace 行为
+
+## RW-01 Open
+
+```text
+click
+→ validate path
+→ Workspace(...)
+→ list artifacts
+→ update last_opened_at
+→ enter Workspace page
+```
+
+---
+
+## RW-02 Missing
+
+路径不存在：
+
+```text
+Missing
+```
+
+支持：
+
+- Remove；
+- Relocate。
+
+不得直接删除历史。
+
+---
+
+## RW-03 Clear
+
+Clear Recent Workspaces 默认保留 pinned。
+
+---
+
+# 20. Home
+
+Home 只做导航和状态。
+
+建议布局：
+
+```text
+Home
+
+Quick Actions
+├─ Open Workspace
+└─ Open File
+
+Recent Workspaces
+├─ ...
+└─ ...
+
+Recent Activity
+├─ ...
+└─ ...
+
+System Status
+├─ LLM
+├─ Plugins
+└─ OCR / Model Directory
+```
+
+Phase 2.1 不增加：
+
+```text
+Tasks
+Plans
+Automations
+Skills
+```
+
+这些以后有真实 Runtime 后再显示。
+
+---
+
+# 21. Desktop Navigation
+
+至少明确：
+
+```text
+Home
+Workspace
+Plugins
+Settings
+```
+
+Artifact 作为 Workspace 内视图。
+
+不要求 SPA Router。
+
+可以只维护：
+
+```python
+current_page
+navigate(page, payload=None)
+```
+
+这样的轻量机制。
+
+---
+
+# 22. Plugin Manager 的架构定位
+
+Plugin Manager 是：
+
+> **现有 File Capability Runtime 的 Product View。**
+
+它不是新的 Plugin Engine。
+
+调用关系：
+
+```text
+Plugin Page
+     ↓
+Plugin View Builder
+     ↓
+existing Discovery / LoadReport / Registry / Policy
+```
+
+---
+
+# 23. Plugin Manager 展示
+
+至少：
 
 - Name；
 - Plugin ID；
 - Version；
 - API Version；
 - Source；
-- Plugin Directory。
-
-### Capability
-
-例如 artifact.read.full。
-
-### Accepts
-
-例如 .docx、.doc。
-
-### Permission
-
-区分：
-
+- Status；
+- Extensions；
+- Capabilities；
 - Declared Permissions；
-- Effective Permissions。
-
-### Runtime Status
-
-至少支持：
-
-- Discovered；
-- Loaded；
-- Disabled；
-- Incompatible；
-- Load Failed；
-- Unavailable。
+- Effective Permissions；
+- Availability；
+- Load Error。
 
 ---
 
-## 21. Plugin Enable / Disable
+# 24. Plugin Status
 
-Plugin enable 状态属于 AppConfig，不属于 plugin.json。
+建议：
 
-配置可采用 disabled_plugin_ids。
+```text
+Enabled
+Disabled
+Load Failed
+Incompatible
+Unavailable
+```
 
 Disabled Plugin：
 
-- 仍可以 Discovery；
-- 仍可以显示 Manifest；
-- 不进入有效 Registry；
-- 不参与 Capability Routing；
-- UI 显示 Disabled。
-
-这样用户仍然知道：
-
-> “这个插件存在，只是被我禁用了。”
+- 仍可 Discovery；
+- Manifest 仍可展示；
+- 不进入 Effective Registry；
+- 不参与 Routing。
 
 ---
 
-## 22. Built-in Plugin 的处理
+# 25. Plugin Enable / Disable
 
-Built-in Plugin 可以允许 Disable，但必须给出影响提示。
+enable / disable 属于：
+
+```text
+AppConfig
+```
+
+不修改：
+
+- plugin.json；
+- plugin.py。
 
 例如：
 
-> 禁用 hmbuddy.docx.core 后，HMBuddy 可能无法读取 .docx 文件。
-
-V0.1 不允许从 UI 删除 Built-in Plugin 文件。
+```yaml
+plugins:
+  disabled_plugin_ids:
+    - user.foo.reader
+```
 
 ---
 
-## 23. External Plugin Directory 管理
+# 26. Built-in Plugin
 
-Settings / Plugins 页面支持：
+Built-in Plugin 可以允许 Disabled，但必须提示影响。
 
-- Add Directory；
-- Remove Directory；
+例如：
+
+> 禁用 DOCX Core Plugin 后，当前 Runtime 可能失去 DOCX read provider。
+
+不得从 UI 删除 Built-in Plugin 文件。
+
+---
+
+# 27. External Plugin Directory
+
+Settings 支持：
+
+- Add；
+- Remove；
 - Rescan。
 
-目录来源至少包括：
+来源：
 
-- AppConfig.paths.external_plugin_dirs；
-- HMBUDDY_PLUGIN_PATH。
+```text
+AppConfig
+HMBUDDY_PLUGIN_PATH
+```
 
-最终 Discovery Paths 必须去重并保持确定性。
+Effective Discovery Paths：
 
-UI 必须显示每一个目录的 Source。
+- 去重；
+- 保持顺序确定；
+- UI 展示 Source。
 
-环境变量来源的目录不能由 UI 假装删除。
-
----
-
-## 24. Plugin Rescan
-
-用户点击 Rescan 后：
-
-Discover  
-→ Validate Manifest  
-→ Apply enabled / disabled policy  
-→ Load  
-→ Build Registry  
-→ Refresh UI
-
-单个 Plugin 失败不得导致整个 HMBuddy 无法启动。
-
-必须复用现有 DiscoveryReport、LoadReport、Registry 和 Runtime Error Model。
+环境变量来源路径不能由 UI 假装删除。
 
 ---
 
-## 25. Plugin Permission 边界
+# 28. Plugin Rescan
 
-Phase 2.1 V0.1 的 Plugin Manager：
+调用现有 Runtime：
 
-### 必须
+```text
+Discover
+→ Validate Manifest
+→ Apply disabled ids
+→ Load
+→ Build Registry
+→ Build Catalog
+→ Refresh Product View
+```
 
-- 展示 declared permissions；
-- 展示 effective permissions；
-- 展示权限不足导致的 unavailable / error。
+不得在 Desktop 重写一套 Loader。
 
-### 不要求
+---
 
-- 在 GUI 中动态授予 filesystem.write；
-- 动态授予 network；
-- 动态授予 process.execute；
-- 动态授予 COM 权限。
+# 29. Permission 边界
+
+Phase 2.1 只展示：
+
+- Declared Permissions；
+- Effective Permissions；
+- Permission Error / Unavailable。
+
+不新增 GUI 动态授权体系。
 
 原因：
 
-Permission Policy 属于 Runtime 安全策略。
+> Permission Policy 属于 Kernel / Capability Runtime 安全边界。
 
-Phase 2.1 不应顺手重构 Phase 1.1.1 的安全模型。
+未来 WorkBuddy-like Approval 应通过：
 
-未来如果需要“用户在 GUI 授权插件权限”，必须单独设计 per-plugin grant、enterprise policy、audit 与 override precedence。
+```text
+Policy + before_tool Hook
+```
 
----
-
-## 26. Home 页面
-
-Phase 2.1 应把启动页升级为 Home。
-
-Home 至少包含：
-
-- 打开工作区；
-- 打开文件；
-- 最近工作区；
-- 最近任务；
-- System Status。
-
-System Status 至少显示：
-
-- LLM；
-- Plugins；
-- OCR / Model Directory。
+实现，而不是混进 Phase 2.1 Plugin Manager。
 
 ---
 
-## 27. Desktop Navigation
+# 30. Settings
 
-Phase 2.1 建议建立明确导航概念：
+## General
 
-- Home；
-- Workspace；
-- Artifact；
-- Plugins；
-- Settings。
+- Restore Last Workspace；
+- Recent Workspace Limit；
+- Recent Activity Limit。
 
-但不要求复杂 SPA Router。
+## Model
 
-关键是页面职责不再全部塞进 desktop/app.py。
+- Base URL；
+- Model；
+- API Key Source；
+- Effective Source。
 
-Desktop App 应逐渐成为：
+## Paths
 
-> Shell / Navigation / Application Composition Root。
+- Model Directory；
+- External Plugin Directories。
 
----
+## Plugins
 
-## 28. 建议模块边界
-
-后续实施时建议：
-
-desktop/
-- app.py
-- shell.py
-- pages/home.py
-- pages/workspace.py
-- pages/plugins.py
-- pages/settings.py
-- presenter.py
-
-application/
-- config.py
-- state.py
-- recent.py
-- plugin_management.py
-
-注意：
-
-这是推荐边界，不是要求为了“目录漂亮”机械拆文件。
-
-只有当实际职责已经形成时再拆。
+跳转到 Plugin Manager。
 
 ---
 
-## 29. Application Service 边界
+# 31. Config 生效策略
 
-### ConfigService
+## Immediate
 
-负责：
+例如：
 
-- 配置加载；
-- 配置合并；
-- 配置校验；
-- Source Tracking；
-- 持久化。
-
-### AppStateService
-
-负责：
-
-- state.json；
-- Last Session；
-- State Migration；
-- Atomic Write。
-
-### RecentService
-
-负责：
-
-- Recent Workspace；
-- Recent Task；
-- limit；
-- pin；
-- remove；
-- clear。
-
-### PluginManagementService
-
-负责：
-
-- 调用 Plugin Discovery；
-- 应用 enable / disable；
-- Registry Refresh；
-- Plugin Status View Model。
-
-Desktop Page 不直接操作底层 Runtime。
+- recent limit；
+- restore last workspace。
 
 ---
 
-## 30. 启动流程
+## Rebuild Plugin Runtime
 
-Phase 2.1 启动顺序应确定：
+例如：
 
-Start  
-→ Resolve App Data Paths  
-→ Load Config  
-→ Build Effective Config  
-→ Load State  
-→ Discover Plugins  
-→ Apply Plugin Preferences  
-→ Load Plugin Registry  
-→ Initialize LLM Client  
-→ Build Desktop Shell  
-→ Home
-
-如果 Config Broken、Plugin Broken、LLM Missing、Workspace Missing，均不得直接阻止应用启动，除非 Core 本身无法初始化。
+- external plugin dirs；
+- plugin enable / disable。
 
 ---
 
-## 31. 配置生效策略
+## Recreate LLM Client
 
-不同设置应区分：
+例如：
 
-### Immediate
-
-例如 Recent Limit、Restore Last Workspace。
-
-保存后立即生效。
-
-### Runtime Reload
-
-例如 External Plugin Directory、Plugin Enable / Disable。
-
-保存后触发 Plugin Runtime Reload。
-
-### Recreate Client
-
-例如 LLM Base URL、Model。
-
-保存后重新构造 LLM Client。
-
-### Restart Required
-
-V0.1 尽量减少需要重启的设置。
-
-如确实无法热更新，UI 必须明确提示 Restart required。
+- base url；
+- model；
+- api key source。
 
 ---
 
-## 32. 错误处理
+## Restart Required
 
-### ER-A01 Config Parse Error
+V0.1 尽量没有。
 
-应用继续启动，使用 defaults，并在 Settings 显示错误。
+如确实存在必须明确提示。
 
-### ER-A02 Config Write Error
+---
 
-不得覆盖内存中的 Effective Config，提示设置保存失败。
+# 32. System Status
 
-### ER-A03 State Corrupt
+只做用户可解释性，不建设监控平台。
+
+至少：
+
+### LLM
+
+```text
+Ready
+Not Configured
+Error
+```
+
+### Plugins
+
+```text
+Loaded: N
+Disabled: N
+Error: N
+```
+
+### Model Directory
+
+```text
+Configured
+Missing
+Not Required
+```
+
+### Last Workspace
+
+```text
+Available
+Missing
+None
+```
+
+---
+
+# 33. 启动流程
+
+目标：
+
+```text
+Start
+  ↓
+Resolve App Data Paths
+  ↓
+Load Config
+  ↓
+Resolve Effective Config
+  ↓
+Load AppState
+  ↓
+Assemble Plugin Runtime
+  ↓
+Initialize LLM Client
+  ↓
+Build Desktop Shell
+  ↓
+Home
+```
+
+以下问题不得阻止应用进入 Home：
+
+- LLM Missing；
+- Config 部分错误；
+- State Corrupt；
+- External Plugin Error；
+- Last Workspace Missing；
+- OCR Model Missing。
+
+只有 Kernel / GUI 本身无法初始化时才启动失败。
+
+---
+
+# 34. Composition Root
+
+`desktop/app.py` 应逐渐成为：
+
+> Application Composition Root。
+
+负责组装：
+
+- config；
+- state；
+- plugin runtime；
+- llm client；
+- desktop shell。
+
+不继续承载全部页面业务逻辑。
+
+---
+
+# 35. State 持久化
+
+## 35.1 Atomic Write
+
+state.json 也使用 atomic replace。
+
+---
+
+## 35.2 Corrupt State
 
 State 可重建。
 
 策略：
 
-- 保留错误文件；
-- 初始化空 State；
-- 不影响 Core 功能。
-
-### ER-A04 Recent Workspace Missing
-
-标记 Missing，不删除。
-
-### ER-A05 Plugin Discovery Error
-
-进入 Plugin Manager 的 Error 区域。
-
-### ER-A06 Plugin Load Error
-
-单插件失败，不阻止其他插件。
-
-### ER-A07 Disabled Required Provider
-
-如果当前文件没有可用 Provider，应显示：
-
-> 当前文件读取能力不可用，相关插件已被禁用。
-
-而不是仅显示 Unsupported file。
+```text
+保留 corrupt file
+→ empty AppState
+→ 应用继续启动
+```
 
 ---
 
-## 33. Logging
+## 35.3 schema_version
 
-Application Foundation 应建立新的 logger：
+必须存在。
 
-- hmbuddy.config；
-- hmbuddy.state；
-- hmbuddy.desktop；
-- hmbuddy.plugin_management。
+---
 
-日志记录：
+# 36. State 保存内容边界
 
-- Config load；
-- Config validation；
-- Config save；
-- State load / save；
-- Plugin rescan；
-- Plugin enable / disable；
-- Recent open / missing。
+允许：
 
-不得记录：
+- paths；
+- ids；
+- timestamps；
+- UI view；
+- display title；
+- pin；
+- activity type。
 
+禁止：
+
+- Artifact 正文；
+- LLM Prompt 全文；
+- LLM Answer 全文；
 - API Key；
 - Token；
-- Artifact 正文；
-- Prompt 全文。
+- Provider instance；
+- Tk Widget；
+- Thread；
+- Python arbitrary object。
 
 ---
 
-## 34. 数据迁移
+# 37. State 保存时机
 
-Config 与 State 都必须包含 schema_version。
+立即：
 
-即使 V0.1 只有版本 1，也必须从第一版建立 migration 概念。
-
-禁止未来直接假设所有用户已有新字段。
-
----
-
-## 35. Settings 页面详细要求
-
-### General
-
-至少：
-
-- Restore Last Workspace；
-- Recent Workspace Limit；
-- Recent Task Limit。
-
-### Model
-
-至少：
-
-- Base URL；
-- Model；
-- API Key Source Status。
-
-API Key 只显示 Source 和 Available / Missing，不显示实际值。
-
-### Paths
-
-至少：
-
-- Model Directory；
-- External Plugin Directories。
-
-### Plugins
-
-可以跳转到独立 Plugin Manager 页面。
-
----
-
-## 36. System Status
-
-Home 或 Settings 应提供最小状态摘要：
-
-LLM：
-- Ready；
-- Not Configured；
-- Error。
-
-Plugins：
-- Loaded；
-- Disabled；
-- Error。
-
-Model Directory：
-- Configured；
-- Missing。
-
-Workspace：
-- Last Workspace Available；
-- Missing。
-
-目的不是做监控平台，而是减少“为什么功能不可用”的黑盒感。
-
----
-
-## 37. State 保存时机
-
-不要求每一次 UI 操作都写磁盘。
-
-### 立即保存
-
-- Settings 修改；
+- Settings；
 - Plugin enable / disable；
-- Pin / Unpin；
-- Remove Recent。
+- pin / unpin；
+- remove recent。
 
-### 节流保存
+可节流：
 
-- recent workspace updated_at；
-- last session；
-- recent task updated_at。
+- recent activity；
+- last workspace；
+- last artifact。
 
-避免频繁磁盘写入。
-
-具体 debounce 时间属于实现细节。
+具体 debounce 属于实现细节。
 
 ---
 
-## 38. 多进程边界
+# 38. JSON vs SQLite
 
-Phase 2.1 V0.1 假设：
+Phase 2.1 继续使用：
 
-> 同一用户同一时间只运行一个 HMBuddy Desktop 实例。
+```text
+config.json
+state.json
+```
 
-不要求解决多实例 Config 锁、State 合并、跨进程事件和 SQLite 并发。
+理由：
 
-如果未来出现真实需求，再引入 file lock / SQLite。
-
----
-
-## 39. JSON 与 SQLite 的选择
-
-Phase 2.1 V0.1 建议继续使用 config.json 和 state.json。
-
-原因：
-
-- 数据量极小；
+- 数据小；
+- 无复杂查询；
+- 单用户；
+- 单进程；
 - 易调试；
-- 离线友好；
-- 无新增依赖；
-- Schema 简单；
-- 当前没有复杂查询和并发。
+- 无额外依赖。
 
-暂不引入 SQLite。
+未来 Session / Conversation / ArtifactVersion 大规模进入后，再基于真实数据模型决定是否 SQLite。
 
-出现以下真实需求时再切换：
-
-- 大量 Task History；
-- Chat History；
-- Artifact Index；
-- 多条件查询；
-- 多进程；
-- 大规模状态关系。
+**不得为了“以后肯定会用数据库”提前引入。**
 
 ---
 
-## 40. 测试策略
+# 39. 多进程边界
 
-### T1 Config
+V0.1 假设：
 
-必须覆盖：
+> 单用户单 Desktop 实例。
 
-- defaults；
-- JSON load；
+不处理：
+
+- file lock；
+- multi-process state merge；
+- IPC；
+- SQLite concurrency。
+
+---
+
+# 40. Logging
+
+建议 logger：
+
+```text
+hmbuddy.config
+hmbuddy.state
+hmbuddy.desktop
+hmbuddy.plugins
+```
+
+日志允许记录：
+
+- config load/save；
+- state load/save；
+- plugin rescan；
+- plugin enable/disable；
+- workspace open；
+- missing path。
+
+禁止记录：
+
+- API key；
+- token；
+- artifact full content；
+- full prompt。
+
+---
+
+# 41. 错误处理
+
+## ER-01 Config Error
+
+继续启动，展示 Settings Error。
+
+## ER-02 Config Save Error
+
+不覆盖当前有效内存状态，并提示用户。
+
+## ER-03 State Corrupt
+
+创建空 State，保留错误文件。
+
+## ER-04 Workspace Missing
+
+显示 Missing，可 Remove / Relocate。
+
+## ER-05 Plugin Discovery / Load Error
+
+Plugin Manager 显示错误，其他插件继续运行。
+
+## ER-06 Disabled Provider
+
+打开文件时如果唯一 Provider 被禁用，应明确提示：
+
+> 所需文件能力当前已禁用。
+
+不要只返回 Unsupported File。
+
+## ER-07 LLM Not Configured
+
+文件浏览和 Artifact 阅读仍可正常使用。
+
+---
+
+# 42. 测试策略
+
+## T1 Config
+
+覆盖：
+
+- default；
+- load；
 - env override；
-- invalid JSON；
+- runtime override；
 - validation；
-- atomic save；
-- secret 不落盘；
-- schema_version。
+- invalid JSON；
+- atomic write；
+- secret not persisted；
+- schema version。
 
-### T2 State
+---
 
-必须覆盖：
+## T2 State
 
-- recent workspace；
+覆盖：
+
+- load/save；
+- corrupt recovery；
+- atomic write；
+- schema version；
+- last view。
+
+---
+
+## T3 Recent Workspace
+
+覆盖：
+
+- add；
+- deduplicate；
+- open；
 - pin；
 - limit；
-- missing path；
-- clear；
-- corrupt state recovery。
-
-### T3 Recent Task
-
-必须覆盖：
-
-- create / update；
-- 排序；
-- limit；
-- resume target；
-- 不保存 Artifact 正文。
-
-### T4 Plugin Management
-
-必须覆盖：
-
-- built-in / external 展示；
-- disabled plugin 不进入有效 Registry；
-- disabled plugin 仍可 discovery；
-- plugin load error 可见；
-- external directory add/remove；
-- rescan；
-- duplicate plugin ID error。
-
-### T5 Config Precedence
-
-至少验证：
-
-Default < User Config < Environment < Runtime Argument。
-
-### T6 Desktop Smoke
-
-至少验证：
-
-1. Home 启动；
-2. Recent Workspace 可打开；
-3. Missing Workspace 可移除；
-4. Settings 可修改 Model；
-5. Plugin Manager 可查看当前插件；
-6. 禁用一个非关键 External Plugin；
-7. Rescan 后状态正确；
-8. 重启应用后 Config / Recent 保留。
+- missing；
+- remove；
+- clear。
 
 ---
 
-## 41. 验收标准
+## T4 Recent Activity
+
+覆盖：
+
+- workspace activity；
+- artifact activity；
+- artifact_qa activity；
+- ordering；
+- limit；
+- resume_view；
+- no content persistence。
+
+---
+
+## T5 Plugin Product View
+
+覆盖：
+
+- built-in；
+- external；
+- enabled；
+- disabled；
+- load failed；
+- incompatible；
+- unavailable；
+- permissions；
+- capabilities；
+- extensions。
+
+---
+
+## T6 Plugin Config
+
+覆盖：
+
+- disable 不修改 Manifest；
+- disabled 不进 Effective Registry；
+- rescan；
+- external directory add/remove；
+- env source path 不被 UI 删除。
+
+---
+
+## T7 Config Precedence
+
+验证：
+
+```text
+Default
+<
+User Config
+<
+Environment
+<
+Runtime Argument
+```
+
+---
+
+## T8 Desktop Smoke
+
+至少：
+
+1. 启动进入 Home；
+2. 打开 Workspace；
+3. Workspace 进入 Recent；
+4. 重启后 Recent 仍在；
+5. Missing Workspace 正确展示；
+6. Settings 修改模型配置；
+7. Plugin Manager 查看现有插件；
+8. Disabled External Plugin；
+9. Rescan 后状态正确；
+10. LLM 未配置仍可读取文件。
+
+---
+
+## T9 Architecture Guard Test
+
+代码审阅 / 测试应确认 Phase 2.1 没有新增：
+
+```text
+TaskEngine
+Session
+AgentLoop
+ToolRegistry
+ExtensionHost
+Planner
+Workflow Graph
+```
+
+如实现过程中发现确实需要，必须先走 Architecture Change，而不是直接加入。
+
+---
+
+# 43. 验收标准
 
 Phase 2.1 V0.1 完成必须满足：
 
-- AC-01：存在统一 AppConfig，不再由 Desktop 各处直接散读环境变量；
-- AC-02：AppConfig 与 AppState 分离；
-- AC-03：用户配置默认保存在独立 per-user app data 目录；
-- AC-04：Config 写入为 atomic write；
-- AC-05：Config 有 schema_version；
-- AC-06：State 有 schema_version；
-- AC-07：环境变量覆盖 Config 时 UI 可解释来源；
-- AC-08：Secret 不以明文写入 config.json；
-- AC-09：Home 显示 Recent Workspace；
-- AC-10：Recent Workspace 支持 pin / remove / missing；
-- AC-11：Home 显示 Recent Task Entry；
-- AC-12：Continue Task 只恢复可序列化 UI Context；
-- AC-13：Recent Task 不包含 Agent Execution State；
-- AC-14：Plugin Manager 直接读取现有 Plugin Runtime 状态；
-- AC-15：可查看 Plugin Manifest / Capability / Permission / Source；
-- AC-16：Plugin 可 enable / disable；
-- AC-17：Disable 不修改 Plugin Manifest；
-- AC-18：External Plugin Directory 可配置；
-- AC-19：Plugin Rescan 单插件失败不影响应用；
-- AC-20：Built-in Plugin 被禁用时有明确影响提示；
-- AC-21：LLM 未配置 / Plugin Error / Workspace Missing 都不阻止 HMBuddy 启动；
-- AC-22：现有 Phase 1 / 1.1 / 2 回归测试继续通过。
+### AC-01 Architecture Alignment
+
+实现遵守 `hmbuddy-architecture-baseline.md V0.1`，无新增 Core Primitive。
+
+### AC-02 Unified Config
+
+Desktop 不再散落读取 LLM / Plugin 路径等配置。
+
+### AC-03 Config / State 分离
+
+两者使用独立文件和独立语义。
+
+### AC-04 Per-user Data
+
+默认数据不写 Git Repository / Workspace。
+
+### AC-05 Atomic Persistence
+
+Config / State 均 atomic write。
+
+### AC-06 Schema Version
+
+Config / State 均有 schema_version。
+
+### AC-07 Secret Boundary
+
+Secret 不明文持久化。
+
+### AC-08 Config Explainability
+
+Effective Config 可以解释 Source。
+
+### AC-09 Home
+
+启动默认进入 Home。
+
+### AC-10 Recent Workspace
+
+支持 reopen / pin / missing / remove / clear。
+
+### AC-11 Recent Activity
+
+能够恢复基本 Workspace / Artifact / View 上下文。
+
+### AC-12 No Fake Task Domain
+
+不存在 RecentTaskEntry / TaskEngine / Task State Machine。
+
+### AC-13 Future Session Compatibility
+
+规格与实现明确预留未来：
+
+```text
+Product Task = Session + metadata
+```
+
+而不建立平行 Task 模型。
+
+### AC-14 Plugin Manager Reuse
+
+直接消费现有 Plugin Runtime 状态。
+
+### AC-15 Plugin Enable / Disable
+
+用户偏好在 AppConfig，不修改 Manifest。
+
+### AC-16 Plugin Rescan
+
+单插件错误不影响应用。
+
+### AC-17 Permission Visible
+
+Declared / Effective Permission 可查看。
+
+### AC-18 LLM Missing Degrades Gracefully
+
+不影响 Workspace / Artifact Runtime。
+
+### AC-19 Desktop Responsibilities Reduced
+
+页面职责不继续集中在单一 `desktop/app.py`。
+
+### AC-20 Existing Runtime Reused
+
+不重写 Workspace / Artifact / Capability Runtime。
+
+### AC-21 No Agent Kernel Yet
+
+不实现 Session / AgentLoop / ToolRegistry / ExtensionHost。
+
+### AC-22 Regression
+
+Phase 1 / 1.1 / 1.1.1 / Phase 2 回归测试继续通过。
 
 ---
 
-## 42. 实施顺序建议
+# 44. 推荐实施顺序
 
-未来真正开发时建议按以下顺序，而不是先画完整页面。
+## Step 1 — App Data Paths
 
-### Step 1 — App Data Path
+先建立：
 
-先确定 config.json、state.json、logs 放在哪里。
-
-### Step 2 — Config Model / ConfigService
-
-先让现有环境变量读取集中化。
-
-### Step 3 — AppState / Recent Workspace
-
-先解决真正最直接的“重新打开应用”。
-
-### Step 4 — Home
-
-有真实 Recent 数据后再做 Home。
-
-### Step 5 — PluginManagementService
-
-把现有 Plugin Runtime 转换成桌面可消费 View Model。
-
-### Step 6 — Plugin Manager UI
-
-再做插件页面。
-
-### Step 7 — Recent Task Contract
-
-建立 RecentTaskEntry，并接当前 Artifact QA / Workspace Session。
-
-### Step 8 — Settings
-
-把 ConfigService 暴露到 UI。
-
-### Step 9 — Recovery / Error / Eval
-
-最后收口异常、迁移和回归。
+```text
+config path
+state path
+logs path
+```
 
 ---
 
-## 43. 与未来阶段的关系
+## Step 2 — Config
 
-Phase 2.1 完成以后，HMBuddy 应具备：
-
-文件能力 Runtime  
-+ Plugin Runtime  
-+ Desktop Shell  
-+ Config  
-+ App State  
-+ Recent Entry
-
-此时才真正具备进一步做“长期办公 Agent”的应用基础。
-
-后续阶段可以基于真实使用优先选择：
-
-### 方向 A — Workspace Search
-
-解决：
-
-> “我知道大概是什么文件，但不知道文件名。”
-
-### 方向 B — Multi-Artifact / Compare
-
-解决：
-
-> “同时理解和比较多份材料。”
-
-### 方向 C — Artifact Update
-
-解决：
-
-> “不只是读，还要持续修改同一个成果。”
-
-### 方向 D — Persistent Task Runtime
-
-解决：
-
-> “任务做到一半退出，回来继续执行。”
-
-### 方向 E — Agent Loop
-
-解决：
-
-> “让 Agent 自己选择工具、文件和执行步骤。”
-
-Phase 2.1 本身不提前实现这些能力。
+集中当前 LLM / Plugin / Model 路径配置。
 
 ---
 
-## 44. 最终阶段定义
+## Step 3 — AppState + Recent Workspace
 
-Phase 2 是：
+先解决最直接的：
+
+> 关闭再打开后不失忆。
+
+---
+
+## Step 4 — Desktop Shell + Home
+
+有真实 Recent 数据以后再做 Home。
+
+---
+
+## Step 5 — Plugin Product View
+
+把现有 Runtime 映射为 UI View Model。
+
+---
+
+## Step 6 — Plugin Manager
+
+增加 enable / disable / paths / rescan。
+
+---
+
+## Step 7 — Recent Activity
+
+只记录导航型 activity，不造 Task Domain。
+
+---
+
+## Step 8 — Settings
+
+将 Config 暴露给用户。
+
+---
+
+## Step 9 — Error Recovery / Regression
+
+收口：
+
+- corrupt config；
+- corrupt state；
+- missing workspace；
+- broken plugin；
+- no LLM。
+
+---
+
+# 45. 与后续 Minimal Agent Kernel 的关系
+
+Phase 2.1 完成后，系统应该是：
+
+```text
+Desktop Product Shell
++
+Workspace / Artifact Runtime
++
+File Capability Runtime
++
+Config
++
+AppState
++
+Plugin Management
+```
+
+此时下一阶段再正式建立：
+
+```text
+Session
+AgentLoop
+ToolRegistry
+ExtensionHost
+```
+
+而不是在 Phase 2.1 中提前混入。
+
+---
+
+# 46. Product Task 的后续迁移原则
+
+未来有 Session 后：
+
+```text
+Task UI
+    ↓
+Session Index
+    ↓
+Session
+```
+
+Home 可以从：
+
+```text
+Recent Activity
+```
+
+逐步升级为：
+
+```text
+Recent Work
+├─ Workspaces
+├─ Artifacts
+└─ Sessions / Tasks
+```
+
+无需推翻 Phase 2.1 Config / State / Shell。
+
+---
+
+# 47. 本阶段成功标准
+
+Phase 2.1 是否成功，不看：
+
+- 页面数量；
+- Service 类数量；
+- 代码分层复杂度。
+
+只看四件事：
+
+1. **用户重新打开应用，不需要重新配置。**
+2. **用户可以快速回到最近 Workspace / Artifact。**
+3. **用户能够理解 HMBuddy 当前有哪些文件能力、哪些可用、哪些不可用。**
+4. **实现没有因为这些产品功能而提前长出新的 Agent Engine。**
+
+---
+
+# 48. 最终阶段定义
+
+Phase 2：
 
 > **HMBuddy 有了桌面入口。**
 
-Phase 2.1 是：
+Phase 2.1：
 
-> **HMBuddy 开始成为一个真正可长期使用的桌面应用。**
+> **HMBuddy 成为可持续使用、可配置、可恢复基本工作上下文的本地桌面应用，但仍然不是 Agent Runtime。**
 
-判断 Phase 2.1 是否成功，不看页面数量，而看以下三个问题是否被稳定解决：
+Phase 2.1 完成以后，再进入：
 
-1. **用户不用重新配置。**
-2. **用户不用重新寻找上次工作。**
-3. **用户知道 HMBuddy 当前有哪些文件能力、哪些可用、哪些不可用。**
+> **Minimal Agent Kernel。**
 
-只有这三个基础成立以后，继续增加更强 Agent 能力才不会把产品建立在一个“每次启动都失忆、能力状态不可见”的桌面壳之上。
+这与 HMBuddy 的长期架构保持一致：
+
+> **WorkBuddy-like Product on a Pi-like Minimal Harness, with an Artifact-native Office Runtime.**
