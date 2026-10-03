@@ -1,41 +1,37 @@
 # Requirements
 
-本目录统一存放 HMBuddy 项目的架构基线与需求规格说明书。
+本目录统一存放 HMBuddy 的 Canonical Architecture、VNext 需求规格与历史规格。
 
-## 架构基线（Canonical）
+## Canonical Architecture
 
-- [HMBuddy 架构设计总纲 — WorkBuddy-like Product on a Pi-like Minimal Harness](./hmbuddy-architecture-baseline.md)
+- [HMBuddy Architecture Baseline V1.0 — Pi-native Banking Office Agent](./hmbuddy-architecture-baseline.md)
 
-该文档是 HMBuddy 后续产品设计、需求规格、实现方案和重构的上位架构基线。
+V1.0 自 2026-10-03 起生效，并正式取代 V0.2。
 
 核心原则：
 
-- 产品功能层向 WorkBuddy 学习；
-- Agent Harness 架构哲学采用 Pi 式极简原语；
-- Office 领域保留 HMBuddy 自己的 Artifact-native Runtime；
-- 新功能优先通过 Tool / Skill / Extension / Capability Plugin 组合实现；
-- 不因产品新增一个功能就新增一个 Core Engine；
-- 架构文档本身可持续迭代，当前文件始终代表最新有效版本，历史由 Git 保留。
+- **Pi-native**：直接使用 Pi 的 Agent / Session / Context / Tool / Extension / Skill / Model Runtime，不再在 HMBuddy 内重建通用 Agent Kernel；
+- **Upstream First**：通用能力先跟随 Pi，上游能力成熟后优先删除重复实现；
+- **No Fork by Default**：默认使用 SDK / Extension / Skill / Package / RPC，不维护长期 Pi Fork；
+- **Thin Integration**：Pi 依赖集中在薄适配层，不向 Office / Banking Domain 扩散；
+- **TS Host + Python Office Runtime**：TypeScript 负责 Pi-native Agent Host，Python 负责 Office 工程；
+- **Domain Ownership**：HMBuddy 长期投入 Office Artifact、Patch/Diff/Validation、银行 Skills、企业治理和内网集成；
+- **Migration by Capability**：旧实现不整体搬迁，只迁移重新证明有价值的领域能力；
+- **Upgradeability First**：持续跟进 Pi 是正式架构能力。
 
-从架构基线生效后，新的需求规格说明书必须包含 `Architecture Alignment`，至少说明：
+## Legacy Architecture
 
-- 依赖的架构基线版本；
-- 使用哪些 Kernel Primitive；
-- 新增哪些 Tool / Skill / Extension / Capability Plugin；
-- 是否新增 Core Primitive；
-- 是否存在架构偏离；
-- 如存在架构变更，必须给出理由、替代方案、兼容性和迁移方案。
+- [V0.2 — WorkBuddy-like Product on a Pi-like Minimal Harness](./legacy/hmbuddy-architecture-baseline-v0.2.md)
 
-## 目录约定
+旧 V0.2 及 Phase 1–2.2 已进入 Legacy。它们仍然是历史实现、学习材料、算法和 Eval 素材来源，但不再约束 VNext 架构。
 
-- 架构原文档使用固定 Canonical 文件持续迭代，不为小版本复制多个“final”文件。
-- 每一个阶段或独立能力使用一份 Markdown 需求规格说明书。
-- Phase 文件名建议采用：`phase-N-<topic>-vX.Y.md`。
-- 规格说明书应优先明确：目标、非目标、Architecture Alignment、模块边界、接口、数据结构、错误处理、测试、验收标准和实施顺序。
-- 后续架构与功能扩展应由真实问题和已观察到的失败推动，不因“完整 Agent 架构”而提前增加无关组件。
-- 如果需要新增 Kernel Primitive、修改 Artifact 顶层 Contract、Session 持久化语义、AgentLoop、Tool Contract、Extension Hook 或 Workspace 安全边界，必须同步更新架构总纲。
+Legacy implementation 已固定在：
 
-## 当前规格
+```text
+legacy/pre-pi-v0.2
+```
+
+## Legacy Phase Specifications
 
 - [Phase 1 — Local Office Artifact Runtime V0.1](./phase-1-local-office-artifact-runtime-v0.1.md)
 - [Phase 1.1 — Pluggable File Capability Runtime V0.1](./phase-1.1-pluggable-file-capability-runtime-v0.1.md)
@@ -45,4 +41,17 @@
 - [Phase 2.1.1 — Desktop & Runtime Integration Hardening V0.1](./phase-2.1.1-desktop-runtime-integration-hardening-v0.1.md)
 - [Phase 2.2 — Desktop UX Shell Redesign V0.1](./phase-2.2-desktop-ux-shell-redesign-v0.1.md)
 
-> Phase 1 / 1.1 / 1.1.1 已形成 Workspace、Artifact 和 File Capability Runtime 基础；Phase 2 建立 Desktop Entry；Phase 2.1 已实现 Home、Config、AppState、Recent Workspace / Activity、Plugin Manager 与 Settings，同时保持未引入 Session、TaskEngine、AgentLoop、ToolRegistry 或 ExtensionHost。Phase 2.1.1 专门收口实现后发现的 Desktop / Application / Runtime 集成缝隙。基于实际使用进一步发现“桌面端仍像文件管理器 / Runtime 控制台”的 Product Layer 失败模式，因此 Phase 2.2 在不改变 Kernel 的前提下，将 Desktop 重构为 Conversation-first 的 Sidebar + Conversation + On-demand Artifact Preview 形态，并把正式 UI 从 Tkinter 迁移到 PySide6。Phase 2.2 完成后，再进入 Minimal Agent Kernel：Session / AgentLoop / ToolRegistry / 最小 ExtensionHost。
+> 不再继续原规划中的 “Phase 3 / Minimal Agent Kernel”。VNext 从 Pi-native bootstrap 重新编号和设计。
+
+## VNext Specification Rule
+
+所有新的需求规格必须包含 `Architecture Alignment`，至少回答：
+
+1. 依赖哪个 Pi release / public contract；
+2. 使用 Pi SDK、Extension、Skill、Package 还是 RPC；
+3. HMBuddy 新增的是 Banking / Office Domain 能力，还是通用 Agent 能力；
+4. 为什么不能直接由 Pi 上游能力满足；
+5. 是否增加 Pi 耦合面；
+6. 是否迁移 Legacy 代码，如迁移，迁移的是哪项能力与哪些 tests；
+7. 对 Pi 升级兼容性有什么影响；
+8. 是否触发 Architecture Change Threshold。

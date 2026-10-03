@@ -1,1940 +1,1087 @@
-# HMBuddy 架构设计总纲 — WorkBuddy-like Product on a Pi-like Minimal Harness
+# HMBuddy Architecture Baseline V1.0 — Pi-native Banking Office Agent
 
 **文档性质：** Canonical Architecture Baseline / 架构原文档  
-**文档版本：** V0.2  
+**文档版本：** V1.0  
 **状态：** Active  
-**适用范围：** HMBuddy 后续所有产品设计、需求规格说明书、实现方案、重构与评审  
-**首次形成基线：** 2026-10-02  
-**形成时仓库基线：** `a0f154b74fbba4fb2a2d4e0d871aadb44fa56ead`  
-**核心定位：** WorkBuddy-like Office Product on a Pi-like Minimal Harness, with an Artifact-native Office Runtime
+**生效日期：** 2026-10-03  
+**取代版本：** V0.2 — WorkBuddy-like Product on a Pi-like Minimal Harness  
+**迁移起点：** HMBuddy `main` @ `4d323326a7a33dc97d1fa0d2bfae4c6d9cb8d90e`  
+**上游基线：** Pi / `@earendil-works/pi-coding-agent` 1.0.0（截至 2026-10-03）  
+**核心定位：** A banking Office Agent distribution built directly on Pi, extending the upstream harness through Office capabilities, banking skills, enterprise governance, and bank-specific integrations.
 
 ---
 
-## 1. 文档目的
+## 1. 架构重置的原因
 
-本文档是 HMBuddy 的**长期架构总纲**，不是某一个 Phase 的一次性需求说明书。
+HMBuddy V0.2 的核心假设是：
 
-后续所有 Phase、功能需求、重构、插件设计、Agent 能力、桌面产品功能，都应以本文档为默认架构基线。
+> 学习 Pi 的极简思想，并在 HMBuddy 内自行实现 Workspace、Session、AgentLoop、ToolRegistry、ExtensionHost 等最小 Agent Kernel，再在其上建设 Office Agent。
 
-本文档解决的核心问题不是：
+该假设在当前阶段不再成立。
 
-> HMBuddy 下一阶段具体开发什么功能？
+Pi 已经提供稳定且持续演进的 Agent Harness，包括 Agent / Session、SessionManager、模型运行时、Tool 生命周期、Context / Compaction、Extensions、Skills、ResourceLoader、事件、SDK、RPC、MCP、Codemode 等能力。HMBuddy 如果继续自行实现同类基础设施，将产生三个问题：
 
-而是：
+1. **重复工程投入**：大量资源用于通用 Agent 基础设施，而不是银行 Office 特性；
+2. **持续落后上游**：Pi 的 Session、Context、Extension、Tool 等契约持续演进，自研实现难以同步；
+3. **维护成本反转**：HMBuddy 会从银行办公 Agent 项目演变为通用 Agent Framework 维护项目。
 
-> **无论后续增加多少 WorkBuddy 式产品能力，HMBuddy 应该始终依赖哪些少量稳定原语？哪些能力必须留在 Kernel，哪些能力应该通过 Tool / Skill / Extension / Capability Plugin 组合出来？**
+因此 V1.0 做出架构重置：
 
-HMBuddy 的长期目标不是复刻 WorkBuddy 的内部架构，也不是机械复刻 Pi Agent。
+> **HMBuddy 不再建设自己的通用 Agent Kernel。Pi 是 HMBuddy 的 Agent substrate；HMBuddy 只拥有银行 Office 领域能力、企业治理和产品体验。**
 
-目标是：
-
-> **产品能力向 WorkBuddy 学习，Agent Harness 的架构哲学向 Pi Agent 学习，同时保留 HMBuddy 面向 Office 文件场景所必需的 Artifact-native 能力。**
+本次重置允许大面积放弃现有实现。旧代码不是兼容性负担，只有经 V1.0 重新证明仍有领域价值的能力才迁移。
 
 ---
 
-# 2. 架构总原则
+# 2. Canonical Definition
 
-HMBuddy 同时坚持三条主线。
+HMBuddy 的长期定义统一为：
 
-## 2.1 产品层：向 WorkBuddy 学习
+> **Pi-native Banking Office Agent**
 
-产品最终应逐步具备用户能够感知的：
+展开为：
 
-- Workspace；
-- Task；
-- Conversation；
-- Results / Artifacts；
-- Skills；
-- Plugins；
-- Automation；
-- Connectors / MCP；
+- **Pi-native**：Agent 生命周期、Session、Tool、Context、Model、Extension、Skill 等通用能力直接依赖 Pi；
+- **Banking**：适配银行内网、权限、审计、敏感数据、内网模型和内部系统；
+- **Office**：重点处理 DOCX / XLSX / PPTX / PDF / OCR / WPS / Office COM 等办公对象；
+- **Agent Distribution**：HMBuddy 是一套 Pi 上的产品化发行与领域能力集合，不是一个新的 Agent Framework。
+
+---
+
+# 3. 第一原则
+
+## 3.1 Upstream First
+
+任何通用 Agent 能力，优先使用 Pi 上游实现。
+
+新增代码前必须先回答：
+
+> Pi 是否已经提供该能力、扩展点或等价组合？
+
+如果答案是“是”，HMBuddy 默认不实现第二套。
+
+适用范围包括但不限于：
+
+- Session；
+- Agent Loop；
+- Tool execution；
+- Model abstraction；
+- Context / Compaction；
+- Skills discovery；
+- Extension lifecycle；
+- MCP；
+- Codemode；
+- Session persistence；
+- Resource discovery；
+- Agent events；
+- Prompt / context resource loading。
+
+当 Pi 新增与 HMBuddy 自研能力重叠的功能时，默认方向不是“再做一层适配”，而是：
+
+> **评估是否可以删除 HMBuddy 的重复实现。**
+
+---
+
+## 3.2 No Fork by Default
+
+HMBuddy 默认：
+
+- 不 Fork Pi 作为长期主线；
+- 不复制 Pi 源码进入 HMBuddy；
+- 不直接修改 Pi 内部实现；
+- 不维护 HMBuddy 专属 Pi 分支。
+
+优先使用：
+
+1. Pi TypeScript SDK；
+2. Pi Extension API；
+3. Pi Skills；
+4. Pi Package；
+5. Pi RPC / CLI Integration；
+6. 上游公开 Contract。
+
+只有公开扩展面无法满足一个**经过真实场景证明的银行级要求**时，才允许提出 Fork / Patch Pi 的架构变更。
+
+Fork Pi 属于高门槛 Architecture Change，必须有 ADR。
+
+---
+
+## 3.3 Thin Integration
+
+HMBuddy 与 Pi 的耦合必须集中在极薄的一层。
+
+禁止出现 Office、Bank Skill、业务代码到处直接依赖 Pi 内部 API 的情况。
+
+目标依赖方向：
+
+~~~text
+Pi
+ ↓
+HMBuddy Pi Integration
+ ↓
+HMBuddy Domain
+ ↓
+Office Runtime / Bank Integration
+~~~
+
+Pi breaking change 应尽可能只影响 integration layer。
+
+---
+
+## 3.4 Domain over Framework
+
+HMBuddy 的工程资源优先投入以下领域：
+
+- Office 结构化读取；
+- Office 高质量生成和修改；
+- Artifact 定位；
+- Patch；
+- Version；
+- Diff；
+- Validation；
+- WPS / Office COM；
+- OCR；
+- 财务报表；
+- 制度 / 公文 / 授信等银行 Skills；
+- 内网治理；
+- 内部系统集成。
+
+不再以“通用 Agent 功能完整度”为项目目标。
+
+---
+
+## 3.5 Migration by Capability, Not by Directory
+
+V0.2 代码不做整体搬迁。
+
+禁止：
+
+~~~text
+cp -r workspace/
+cp -r plugin_runtime/
+cp -r desktop/
+~~~
+
+进入 VNext。
+
+迁移单位必须是“经过重新证明的能力”。
+
+例如：
+
+- PDF 跨页表格解析有价值 → 可迁移算法与测试；
+- ArtifactLocator 有真实 Office 编辑价值 → 重新纳入；
+- 通用 Plugin Runtime 与 Pi Extensions 重叠 → 不迁移；
+- 自研 LLM Client 与 Pi Model Runtime 重叠 → 不迁移。
+
+---
+
+# 4. Ownership Boundary
+
+V1.0 最重要的架构约束不是模块数量，而是所有权。
+
+## 4.1 Pi Owns
+
+以下能力默认属于 Pi，上游为事实来源：
+
+~~~text
+Agent lifecycle
+Agent loop
+Session
+Session persistence / SessionManager
+Conversation context
+Context reconstruction
+Compaction
+Model runtime
+Provider abstraction
+Tool registration and execution
+Tool lifecycle events
+Resource discovery
+Extensions
+Skills discovery
+Prompt resources
+MCP
+Codemode
+Agent events
+CLI / TUI base behavior
+SDK / RPC integration contracts
+~~~
+
+HMBuddy 不建设平行实现。
+
+---
+
+## 4.2 HMBuddy Owns
+
+以下是 HMBuddy 应长期拥有的差异化资产：
+
+~~~text
+Office Artifact domain
+DOCX / XLSX / PPTX / PDF capabilities
+OCR
+WPS / Office COM integration
+Artifact Locator / Patch / Version / Diff
+Office validation
+Banking skills
+Banking policy
+Audit requirements
+Sensitive-data handling
+Bank internal integrations
+Bank-specific product UX
+Office-specific eval corpus
+~~~
+
+---
+
+## 4.3 Do Not Own
+
+以下能力除非有新的 ADR，否则 HMBuddy 明确不拥有：
+
+~~~text
+Generic Agent Kernel
+Generic Session Framework
+Generic Tool Registry
+Generic Model Runtime
+Generic Context Manager
+Generic Plugin Framework
+Generic Skill Runtime
+Generic MCP Runtime
+Generic Planner
+Generic Memory Framework
+Generic Multi-Agent Framework
+Generic Workflow / DAG Engine
+Generic Task Engine
+~~~
+
+---
+
+# 5. Target Architecture
+
+~~~text
+                         HMBuddy
+                            │
+                ┌───────────┴───────────┐
+                │                       │
+        Banking Product Layer      Banking Skills
+                │                       │
+                └───────────┬───────────┘
+                            │
+                  HMBuddy Pi Integration
+                            │
+╔═══════════════════════════╪═══════════════════════════╗
+║                           PI                          ║
+║                                                       ║
+║ Agent / Session / Context / Model Runtime             ║
+║ Tools / Extensions / Skills / Resources               ║
+║ Compaction / Events / MCP / Codemode / RPC / SDK      ║
+╚═══════════════════════════╪═══════════════════════════╝
+                            │
+                    Office Tool Bridge
+                            │
+                ┌───────────┴───────────┐
+                │                       │
+        Python Office Runtime      Bank Integrations
+                │                       │
+  DOCX / XLSX / PPTX / PDF      OA / WPS / Internal API
+  OCR / COM / Patch / Diff
+  Validation / Rendering
+~~~
+
+---
+
+# 6. Runtime Split
+
+## 6.1 TypeScript Host
+
+V1.0 默认采用：
+
+> **TypeScript as the Pi-native host.**
+
+原因不是语言偏好，而是 Pi 的一等集成接口是 TypeScript SDK。
+
+TypeScript Host 负责：
+
+- 创建 / 管理 Pi AgentSession；
+- 装配模型与 Session；
+- 注册 HMBuddy Extensions；
+- 注册 Office Tools；
+- 加载 HMBuddy Skills；
+- 订阅 Pi lifecycle events；
+- 处理银行级 Approval / Audit / Policy；
+- 连接 Product UI。
+
+HMBuddy 不在 TypeScript Host 中重新实现 AgentLoop。
+
+---
+
+## 6.2 Python Office Runtime
+
+Python 继续承担最适合 Python 生态的 Office 工程能力：
+
+- python-docx；
+- openpyxl；
+- PDF parsing；
+- OCR；
+- win32com；
+- WPS / Office COM；
+- 表格处理；
+- 文档结构识别；
+- Office 文件验证。
+
+Python Runtime 不理解：
+
+- Session；
+- AgentLoop；
+- Prompt；
+- Model；
 - Memory；
-- Expert / Subagent；
-- Settings；
-- Approval；
-- Resume；
-- History。
+- Planner。
 
-这些是**产品功能目标**。
-
-但它们不意味着底层必须存在一一对应的：
-
-- TaskEngine；
-- PlannerEngine；
-- MemoryEngine；
-- AutomationEngine；
-- MultiAgentEngine；
-- WorkflowEngine。
-
-产品功能数量不应线性推高 Kernel 复杂度。
+它只理解 Office Domain。
 
 ---
 
-## 2.2 Harness 层：向 Pi Agent 学习
+## 6.3 Process Boundary
 
-HMBuddy 应遵循：
+TypeScript Host 与 Python Office Runtime 通过稳定的 Office Capability Protocol 通信。
 
-> **Primitives, not features.**
+首选实现：
 
-Kernel 只提供少量稳定原语。
+> **local subprocess + stdio JSONL / JSON-RPC-like protocol**
 
-高级功能优先通过：
+原因：
 
-- Tool；
-- Skill；
-- Extension；
-- Capability Plugin；
-- 文件 / Session 数据；
+- 无需额外端口；
+- 适合企业内网和离线环境；
+- Python 与 TypeScript 生命周期解耦；
+- 易于调试；
+- 易于独立测试；
+- 后续可替换为 named pipe / local socket 而不影响上层 Tool Contract。
 
-组合实现。
-
-在没有真实失败模式证明必要之前，不把以下概念固化为 Core：
-
-- Planner；
-- Workflow Graph；
-- Todo Engine；
-- Multi-Agent；
-- MCP Runtime；
-- Memory Engine；
-- Automation Engine；
-- Review Agent；
-- Critic Agent；
-- Supervisor Agent。
-
----
-
-## 2.3 Office 领域：保留 Artifact-native 模型
-
-HMBuddy 不能机械照搬 Coding Agent 的：
+初始协议只需要：
 
 ~~~text
+capabilities
+inspect
 read
-write
-edit
-bash
+search
+create
+patch
+validate
+compare
+render
 ~~~
 
-Office 文件不是普通文本文件。
+具体 transport 不是领域 Contract。
 
-DOCX / XLSX / PPTX / PDF 内部存在：
+---
 
-- 标题层级；
-- 段落；
-- 表格；
-- 合并单元格；
-- 公式；
-- Sheet；
-- Slide；
-- Shape；
-- Page；
-- Bounding Box；
-- 格式定位；
-- Office / WPS 原生对象。
+# 7. Office Domain Model
 
-因此 HMBuddy 保留：
+Artifact 不再属于“通用 Agent Kernel”。
+
+V1.0 将其重新定义为：
+
+> **Office Domain Model**
+
+推荐逐步形成：
 
 ~~~text
 Artifact
-ArtifactRef
 ArtifactBlock
 ArtifactLocator
-ArtifactVersion（未来）
-ArtifactPatch（未来）
-~~~
-
-作为 Office Agent 的领域核心。
-
-这构成 HMBuddy 相对 Pi Agent 的主要领域差异。
-
----
-
-# 3. 产品定位
-
-HMBuddy 的产品定位统一为：
-
-> **Local-first, File-centric, Artifact-native Office Agent Harness**
-
-核心特征：
-
-~~~text
-Local-first
-Offline-friendly
-Workspace-native
-Artifact-native
-Plugin-native
-Skill-driven
-Human-controllable
-Auditable
-Enterprise-friendly
-~~~
-
-优先面向：
-
-- 企业内网；
-- 无互联网或受限联网环境；
-- Office / WPS 文件工作流；
-- 本地 Workspace；
-- 长期维护同一工作成果；
-- 可审计文件操作；
-- Human-in-the-loop。
-
-HMBuddy 不追求成为通用互联网 Agent 平台。
-
----
-
-# 4. 架构分层
-
-HMBuddy 目标架构分成四层：
-
-~~~text
-┌───────────────────────────────────────────────┐
-│ Product Layer                                │
-│ WorkBuddy-like UX                            │
-│ Home / Workspace / Task / Results / Skills   │
-│ Plugins / Automation / Settings / History    │
-└───────────────────────┬───────────────────────┘
-                        │
-                        ▼
-┌───────────────────────────────────────────────┐
-│ Minimal Agent Kernel                          │
-│ Workspace / Artifact / Session / AgentLoop    │
-│ ToolRegistry / ExtensionHost                  │
-│ + Policy / Events / Context invariants        │
-└───────────────────────┬───────────────────────┘
-                        │
-             ┌──────────┼───────────┐
-             ▼          ▼           ▼
-┌────────────────┐ ┌──────────┐ ┌──────────────┐
-│ Tools          │ │ Skills   │ │ Extensions   │
-└───────┬────────┘ └──────────┘ └───────┬──────┘
-        │                                │
-        ▼                                │
-┌───────────────────────────────┐        │
-│ File Capability Runtime       │        │
-│ Capability / Provider /       │        │
-│ Plugin / Adapter / COM / OCR  │        │
-└───────────────────────────────┘        │
-                                         ├─ Approval
-                                         ├─ Memory
-                                         ├─ MCP
-                                         ├─ Plan
-                                         ├─ Automation
-                                         └─ Subagent
-~~~
-
-关键要求：
-
-> **产品层可以很丰富，Kernel 必须长期保持小。**
-
----
-
-# 5. HMBuddy Kernel：六个核心原语
-
-除非后续有明确工程证据，否则 Kernel 原语控制在以下六类。
-
----
-
-## 5.1 Workspace
-
-Workspace 表达：
-
-> Agent 被允许持续工作的本地工作环境。
-
-Workspace 不等于“一个文件夹选择器”。
-
-当前阶段主要包含：
-
-- root boundary；
-- workspace_id；
-- ArtifactRef trust domain；
-- file discovery；
-- Capability Catalog；
-- symlink / path boundary。
-
-未来可自然扩展：
-
-~~~text
-Workspace
-├─ Files
-├─ Artifacts
-├─ Sessions
-├─ Skills
-├─ Local Config
-├─ Indexes
-└─ History
-~~~
-
-但不要求一次性实现这些目录或数据库。
-
-### Workspace Kernel Invariant
-
-Workspace 必须始终负责：
-
-1. 本地访问边界；
-2. Artifact 的信任域；
-3. 当前任务的工作范围；
-4. 文件操作的安全作用域。
-
-任何 Tool / Extension / Plugin 都不能绕过 Workspace Boundary。
-
----
-
-## 5.2 Artifact
-
-Artifact 表达：
-
-> Agent 正在理解、创建、修改或交付的工作成果。
-
-当前核心：
-
-~~~text
-ArtifactRef
-Artifact
-ArtifactBlock
-ArtifactLocator
-~~~
-
-未来在真实写能力进入后扩展：
-
-~~~text
 ArtifactVersion
 ArtifactPatch
 ArtifactDiff
 ValidationResult
 ~~~
 
-Artifact 必须保持格式中立的顶层 Contract，同时允许格式特有结构。
-
-### Artifact 原则
-
-禁止把所有 Office 文件过早压成：
-
-~~~text
-string
-~~~
-
-或：
-
-~~~text
-markdown
-~~~
-
-Markdown / Text 只是面向 LLM 的一种 Representation，不是 Artifact 本身。
-
----
-
-## 5.3 Session
-
-Session 表达：
-
-> 一次可持续、可恢复的 Agent 工作上下文。
-
-这是未来 HMBuddy 持久任务能力的核心，而不是重型 Task Engine。
-
-建议最小模型：
-
-~~~text
-Session
-├─ session_id
-├─ workspace_id
-├─ title
-├─ messages
-├─ tool_calls
-├─ artifact_refs
-├─ metadata
-├─ created_at
-└─ updated_at
-~~~
-
-产品层可以把 Session 呈现为：
-
-~~~text
-Task
-Conversation
-Recent Task
-History
-Resume
-~~~
-
-但 Kernel 不因此必须拥有：
-
-- TaskGraph；
-- StepDependency；
-- WorkflowStateMachine；
-- Planner State；
-- Execution DAG。
-
-### 核心映射
-
-> **Product Task = Session + Task Metadata**
-
-只有真实需求证明需要稳定 Step Graph 时，才考虑增加更强 Task Contract。
-
----
-
-## 5.4 AgentLoop
-
-AgentLoop 是 Agent Kernel 中最小且最关键的执行原语。
-
-基本形式：
-
-~~~text
-User / Session Context
-        ↓
-Model
-        ↓
-Tool Call?
-   ┌────┴─────┐
-   │          │
-  No         Yes
-   │          │
- Finish     Execute Tool
-              ↓
-          Observation
-              ↓
-            Session
-              ↓
-             Model
-~~~
-
-概念上保持：
-
-~~~python
-while session_active:
-    response = model(messages, tools)
-
-    if no_tool_call(response):
-        finish()
-
-    result = tools.execute(response.tool_call)
-    session.append(result)
-~~~
-
-未来的：
-
-- Approval；
-- Steering；
-- Context Injection；
-- Compaction；
-- Audit；
-- Plan；
-- Memory；
-
-通过 Hook 进入循环，而不是不断把 AgentLoop 拆成新 Engine。
-
----
-
-## 5.5 ToolRegistry
-
-Tool 是**模型直接可调用的动作接口**。
-
-Tool 与 Capability 必须严格区分。
-
-### Tool 面向 Agent
-
-例如：
-
-~~~text
-list_files
-search_files
-read_file
-create_file
-edit_file
-validate_file
-~~~
-
-### Capability 面向 Runtime
-
-例如：
-
-~~~text
-artifact.read.full
-artifact.read.range
-artifact.create
-artifact.patch
-artifact.validate
-~~~
-
-### Adapter / API / COM 面向实现
-
-例如：
-
-~~~text
-python-docx
-openpyxl
-pdfplumber
-WPS COM
-Office COM
-OCR
-~~~
-
-完整关系：
-
-~~~text
-Agent
-  ↓
-Tool
-  ↓
-Capability Runtime
-  ↓
-Provider
-  ↓
-Adapter / API / COM / OCR
-~~~
-
-Agent 不应知道具体 Provider。
-
----
-
-## 5.6 ExtensionHost
-
-ExtensionHost 是 HMBuddy 高级能力扩展面的统一入口。
-
-首版应保持极简。
-
-建议最小 API：
-
-~~~python
-register_tool(...)
-register_hook(...)
-register_skill(...)
-~~~
-
-Hook 初始只需要：
-
-~~~text
-session_start
-before_model
-after_model
-before_tool
-after_tool
-session_end
-~~~
-
-通过这些 Hook，可以逐步实现：
-
-### Approval
-
-~~~text
-before_tool
-→ 判断 edit_file / delete / external_send
-→ allow / ask / deny
-~~~
-
-### Audit
-
-~~~text
-after_tool
-→ 写审计日志
-~~~
-
-### Memory
-
-~~~text
-before_model
-→ 找相关历史
-→ 注入 Context
-~~~
-
-### RAG
-
-~~~text
-before_model / Tool
-→ search
-→ inject
-~~~
-
-### MCP
-
-~~~text
-Extension
-→ 动态注册 MCP Tools
-~~~
-
-### Plan Mode
-
-~~~text
-Extension / Skill
-→ 生成和维护 PLAN.md / plan state
-~~~
-
-### Subagent
-
-~~~text
-Tool / Extension
-→ 启动另一个 Session
-~~~
-
----
-
-# 6. Kernel Invariants：不是原语，但必须由 Core 保证
-
-为了适应企业内网场景，HMBuddy 不完全复制 Pi 的最小安全假设。
-
-以下属于 Kernel Invariants。
-
----
-
-## 6.1 Policy
-
-Core 至少支持：
-
-~~~text
-ALLOW
-ASK
-DENY
-~~~
-
-Policy 负责：
-
-- Workspace Boundary；
-- filesystem.read；
-- filesystem.write；
-- process.execute；
-- network；
-- office.com；
-- wps.com；
-- destructive operation。
-
-但：
-
-> “ASK 如何展示给用户”属于 Product / Extension 层。
-
----
-
-## 6.2 Events
-
-Kernel 应提供少量稳定事件。
-
-事件的作用是让：
-
-- UI；
-- Audit；
-- Approval；
-- Metrics；
-- Extensions；
-
-不需要侵入 AgentLoop。
-
-事件必须是简单的运行时事件，不建设复杂 Event Bus 平台。
-
----
-
-## 6.3 Context
-
-Context 负责：
-
-> 当前一次模型调用到底看到什么。
-
-来源可能包括：
-
-- Session messages；
-- Workspace 信息；
-- Artifact 内容；
-- Tool descriptions；
-- Skill；
-- Extension 注入信息；
-- Memory；
-- Search Result。
-
-Context 必须继续遵守当前：
-
-- Context Budget；
-- Truncation 可观察；
-- 不默认暴露绝对路径；
-- LLM 不得误认为看到完整内容。
-
----
-
-# 7. 当前 File Capability Runtime 的定位
-
-Phase 1.1 / 1.1.1 已形成：
-
-~~~text
-Manifest
-Discovery
-Loader
-Registry
-Router
-Permission
-Availability
-Capability Catalog
-Trace
-External Plugin
-~~~
-
-这一套必须保留。
-
-但它的职责要严格限制为：
-
-> **管理某项文件 / Artifact Capability 由哪个 Provider 实现。**
-
-它不是整个 Agent 的 Plugin Framework。
-
-未来不要把：
-
-- Session；
-- Memory；
-- Planner；
-- MCP；
-- Automation；
-- Subagent；
-
-全部塞进 `plugin_runtime/`。
-
----
-
-# 8. Capability Plugin 与 Extension 的区别
-
-这是后续架构必须长期保持的边界。
-
-## 8.1 Capability Plugin
-
-目标：
-
-> 提供某类 Artifact / File Capability 的实现。
-
-例如：
-
-~~~text
-DOCX Plugin
-PDF Plugin
-XLSX Plugin
-OCR Plugin
-WPS COM Plugin
-Financial Workbook Plugin
-~~~
-
-注册的是：
-
-~~~text
-artifact.read.*
-artifact.create
-artifact.patch
-artifact.render
-financial.statement.normalize
-~~~
-
----
-
-## 8.2 Extension
-
-目标：
-
-> 扩展 Agent Harness 的行为。
-
-例如：
-
-~~~text
-Approval Extension
-Memory Extension
-MCP Extension
-Automation Extension
-Plan Extension
-Subagent Extension
-Audit Extension
-~~~
-
-Extension 可以：
-
-- 注册 Tool；
-- 注册 Hook；
-- 注册 Skill；
-- 增加 Context；
-- 可选增加 UI。
-
----
-
-## 8.3 两者关系
-
-未来可以统一安装模型，但概念不能混。
-
-~~~text
-Extension Ecosystem
-│
-├─ Agent Extensions
-│  ├─ approval
-│  ├─ memory
-│  ├─ mcp
-│  └─ automation
-│
-└─ Capability Plugins
-   ├─ docx
-   ├─ pdf
-   ├─ xlsx
-   └─ wps
-~~~
-
----
-
-# 9. Skill：工作方法，不是程序状态机
-
-Skill 解决：
-
-> Agent 应该怎样完成一类工作。
-
-Tool 解决：
-
-> Agent 能做什么动作。
-
-Plugin / Provider 解决：
-
-> 动作具体怎么执行。
-
-三者不能混。
-
----
-
-## 9.1 推荐 Skill 结构
-
-保持 Markdown-first：
-
-~~~text
-skill-name/
-├─ SKILL.md
-├─ references/
-├─ scripts/
-└─ templates/
-~~~
-
-`SKILL.md` 推荐包含：
-
-~~~text
-Name
-Description
-Trigger
-Goal
-Inputs
-Procedure
-Capabilities / Tools
-Constraints
-Validation
-Examples
-~~~
-
----
-
-## 9.2 Progressive Disclosure
-
-模型初始只看到：
-
-~~~text
-Skill Name
-Description
-~~~
-
-需要时再读取：
-
-~~~text
-SKILL.md
-~~~
-
-只有执行中需要时才加载：
-
-~~~text
-references/
-templates/
-scripts/
-~~~
-
-避免所有 Skill 一次性进入 Context。
-
----
-
-## 9.3 SenseWright 的定位
-
-SenseWright 的：
-
-- DeepRead；
-- Review；
-- Learning；
-- Practice；
-
-未来应优先作为 HMBuddy Skills 接入。
-
-不应重写成：
-
-- Python Workflow；
-- Graph；
-- Agent 子类；
-- Planner 模块。
-
-只有其中某一步确实需要确定性程序时，才配套 Script / Tool。
-
----
-
-# 10. Planner 不是 Core
-
-产品层可以展示：
-
-~~~text
-计划
-步骤
-执行进度
-~~~
-
-但 Kernel 不应默认建立：
-
-~~~text
-PlannerService
-PlanRepository
-PlanStepEngine
-PlanExecutor
-~~~
-
-首版可以只是：
-
-~~~text
-Skill
-+
-Session metadata
-+
-PLAN.md
-~~~
-
-或模型直接维护简单结构：
-
-~~~text
-1. 找材料
-2. 阅读
-3. 生成
-4. 校验
-~~~
-
-只有真实使用证明：
-
-> 计划需要稳定结构、重排、暂停、依赖恢复
-
-时，才将 Plan 提升为正式 Contract。
-
----
-
-# 11. Task 不是 Core Engine
-
-WorkBuddy 式产品一定会有 Task 页面。
-
-但 HMBuddy 必须坚持：
-
-> 产品上的 Task 不等于架构里的重型 TaskEngine。
-
-第一阶段：
-
-~~~text
-Task UI
-   ↓
-Session Index
-   ↓
-Session Store
-~~~
-
-任务状态可以很简单：
-
-~~~text
-active
-waiting_user
-completed
-failed
-cancelled
-~~~
-
-不要提前建设：
-
-- DAG；
-- Job Queue；
-- Workflow Orchestrator；
-- Retry Scheduler；
-- Step Database。
-
-如果未来 Automation / Long-running Task 真的出现需要，再演进。
-
----
-
-# 12. Artifact 写能力的目标架构
-
-要走向 WorkBuddy 产品形态，HMBuddy 最关键的跃迁不是 Multi-Agent，而是：
-
-> **从 read-only Artifact Runtime 进入可验证写入。**
-
-必须优先形成：
-
-~~~text
-Artifact
-   ↓
-ArtifactPatch
-   ↓
-Capability Provider
-   ↓
-New Artifact Version
-   ↓
-Validate
-   ↓
-ArtifactDiff
-~~~
-
----
-
-## 12.1 不推荐
-
-~~~python
-update_docx(file, instruction)
-~~~
-
-这种过于黑盒的接口。
-
----
-
-## 12.2 推荐
-
-~~~text
-ArtifactPatch
-├─ artifact_id
-├─ base_version
-├─ operations
-│  ├─ replace(locator)
-│  ├─ insert(locator)
-│  ├─ delete(locator)
-│  ├─ update_cell(locator)
-│  └─ ...
-└─ metadata
-~~~
-
-当前 Phase 1.1.1 已引入 `ArtifactLocator`，未来写能力应直接复用，而不是另起一套定位模型。
-
----
-
-# 13. WorkBuddy 产品功能如何映射到极简 Kernel
-
-这是后续所有产品需求设计时必须优先参考的映射表。
-
-| 产品功能 | 优先映射到 HMBuddy 原语 |
-|---|---|
-| Workspace | Workspace |
-| Task | Session + metadata |
-| Conversation | Session.messages |
-| Results | Session.artifacts |
-| Files | Workspace + Artifact |
-| Resume | Reload Session |
-| History | Session Store / Session Index |
-| Planner | Skill / Extension |
-| Tool Calling | AgentLoop + ToolRegistry |
-| Skill | Markdown Skill |
-| Plugins | Extension / Capability Plugin |
-| Office 能力 | Capability Plugin |
-| Approval | Policy + before_tool Hook |
-| Diff | Artifact Tool / ArtifactDiff |
-| Version | ArtifactVersion |
-| Automation | Scheduler Extension → Start Session |
-| Memory | before_model Context Extension |
-| MCP | Extension → Register Tools |
-| Expert | Session Profile + Skill |
-| Multi-Agent | Tool / Extension → Spawn Session |
-| RAG | Search Tool / Context Extension |
-| Audit | Events / after_tool Hook |
-
-核心判断标准：
-
-> **新增产品功能时，优先寻找“现有原语的组合”，而不是新增 Kernel 模块。**
-
----
-
-# 14. Tool 设计原则
-
-HMBuddy 面向模型暴露的 Tool 数量必须保持少而稳定。
-
-第一批 Office Primitive Tools 推荐：
-
-~~~text
-list_files
-search_files
-read_file
-create_file
-edit_file
-validate_file
-~~~
-
-未来可以按真实需求加入：
-
-~~~text
-compare_files
-move_file
-copy_file
-render_file
-~~~
-
-但不要把所有底层 Capability 直接暴露给模型。
-
-例如：
-
-~~~text
-artifact.read.full
-artifact.read.range
-artifact.read.outline
-~~~
-
-可以由一个：
-
-~~~text
-read_file
-~~~
-
-Tool 根据参数内部选择。
-
----
-
-# 15. 模型与程序的职责边界
-
-继续坚持：
-
-> LLM 负责语义不确定性，程序负责确定性约束。
-
----
-
-## 15.1 LLM 负责
-
-- 判断用户意图；
-- 决定下一步需要什么 Tool；
-- 决定阅读哪些材料；
-- 综合多文件信息；
-- 生成内容；
-- 判断是否需要调用 Skill；
-- 根据 Tool Result 调整下一步行动。
-
----
-
-## 15.2 程序负责
-
-- Workspace 边界；
-- Plugin Discovery；
-- Capability Routing；
-- Permission；
-- 文件定位；
-- Patch 执行；
-- Hash / Version；
-- Validation；
-- Session 持久化；
-- Tool schema；
-- Audit；
-- Retry policy；
-- Context budget。
-
----
-
-# 16. Computer Use 的位置
-
-HMBuddy 不采用“所有办公操作都 Computer Use”的架构。
-
-优先级：
-
-~~~text
-Native File Structure
-        ↓
-Official / Local API
-        ↓
-Office / WPS COM
-        ↓
-MCP / Connector
-        ↓
-UI Automation
-        ↓
-Vision Computer Use
-~~~
-
-Computer Use 主要用于：
-
-- 老 OA；
-- 无开放 API 的客户端；
-- 特殊企业系统；
-- 必须通过 GUI 操作的流程。
-
-文件处理本身优先走 Artifact / Capability Runtime。
-
----
-
-# 17. MCP 的定位
-
-MCP 不进入 Kernel。
-
-MCP 解决：
-
-> Agent 如何访问 Workspace 之外的系统。
-
-例如未来：
-
-~~~text
-OA
-邮件
-知识库
-信贷系统
-内部搜索
-数据库
-审批系统
-~~~
-
-实现方式：
-
-~~~text
-MCP Extension
-      ↓
-discover tools
-      ↓
-register_tool(...)
-      ↓
-ToolRegistry
-~~~
-
-Kernel 只看到 Tool，不知道它来自 MCP。
-
----
-
-# 18. Automation 的定位
-
-Automation 不进入 AgentLoop Core。
-
-本质是：
-
-~~~text
-Scheduler
-    ↓
-Create / Resume Session
-    ↓
-AgentLoop
-~~~
-
-例如：
-
-~~~text
-每天 08:30
-    ↓
-新建 Session
-    ↓
-执行日报 Skill
-    ↓
-生成 Artifact
-~~~
-
-因此 Automation 应优先作为 Extension。
-
----
-
-# 19. Memory 的定位
-
-Memory 不应一开始成为独立大型系统。
-
-优先模型：
-
-~~~text
-before_model Hook
-      ↓
-retrieve relevant memory
-      ↓
-inject Context
-~~~
-
-Memory 的存储实现可以变化：
-
-- Session summary；
-- Local database；
-- vector search；
-- enterprise knowledge store。
-
-AgentLoop 无需知道。
-
----
-
-# 20. Multi-Agent 的定位
-
-Multi-Agent 不是近期目标。
-
-如果未来真实需求出现：
-
-~~~text
-主 Agent
-   ↓
-delegate()
-   ↓
-启动另一 Session
-   ↓
-返回结果
-~~~
-
-即可先实现。
-
-不要提前建设：
-
-- Supervisor Framework；
-- Agent Network；
-- A2A Platform；
-- Agent Team Manager。
-
-单 Agent 的：
-
-~~~text
-找材料
-读材料
-修改文件
-验证成果
-恢复 Session
-~~~
-
-闭环未完成前，不进入 Multi-Agent。
-
----
-
-# 21. 产品 UI 与 Kernel 的关系
-
-Product Layer 可以向 WorkBuddy 学习。
-
-推荐未来 UI：
-
-~~~text
-Home
-├─ Recent Workspaces
-├─ Recent Tasks / Sessions
-├─ System Status
-└─ Quick Actions
-
-Workspace
-├─ Files
-├─ Sessions / Tasks
-├─ Artifacts / Results
-└─ Skills
-
-Task
-├─ Conversation
-├─ Tool Activity
-├─ Artifacts
-├─ Changes
-└─ Approval
-
-Plugins
-Settings
-Skills
-Automation
-~~~
-
-但 UI 不得反向要求 Kernel 为每个页面增加独立 Engine。
-
----
-
-# 22. 当前已完成能力与目标架构的映射
-
-截至本文档 V0.1，HMBuddy 已经完成：
-
-## Phase 1 / 1.1 / 1.1.1
-
-~~~text
-Workspace
-Artifact
-ArtifactBlock
-ArtifactLocator
-File Capability Runtime
-Manifest
-Discovery
-Loader
-Registry
-Router
-Policy
-Availability
-Capability Catalog
-Trace
-DOCX/PDF/XLSX/PPTX/XLS/DOC/TEXT
-OCR
-PDF Table
-Context Budget
-CI
-~~~
-
-这些全部保留。
-
----
-
-## Phase 2
-
-已经具备：
-
-~~~text
-Desktop Entry
-Workspace selection
-File list
-Artifact preview
-Document Q&A
-Background task execution
-~~~
-
----
-
-## Phase 2.1
-
-**已完成**（V0.2 起为真实实现状态）。
-
-已交付：
-
-~~~text
-Home
-Config（AppConfig / EffectiveConfig）
-State（AppState）
-Recent Workspace
-Recent Activity（不建立 Task 域）
-Plugin Manager
-Settings
-Desktop Shell 四页导航
-~~~
-
-实施约束已验证：
-
-> Recent Activity 只做 UI 导航历史，不演变成 Task Engine；
-> 未来 Minimal Agent Kernel 建立 Session 后，Agent 相关入口迁移为 Session Index（Product Task = Session + metadata）。
-
----
-
-# 23. 推荐演进路线
-
-本文档不锁死具体 Phase 编号，但推荐以下能力顺序。
-
----
-
-## Stage A — Desktop Application Foundation
-
-**已完成**（Phase 2.1 + Phase 2.1.1 Integration Hardening）。
-
-已交付：
-
-~~~text
-Config
-App State
-Home
-Recent Workspace
-Recent Activity
-Plugin Manager
-Settings
-~~~
-
-目标达成：
-
-> HMBuddy 已成为可持续使用、可配置、可恢复基本工作上下文的本地桌面应用（仍非 Agent Runtime）。
-
----
-
-## Stage B — Minimal Agent Kernel
-
-新增最小：
-
-~~~text
-Session
-SessionStore
-AgentLoop
-Tool
-ToolRegistry
-ExtensionHost
-Hooks
-~~~
-
-不加入：
-
-- Planner；
-- MCP；
-- Memory；
-- Multi-Agent；
-- Workflow Graph。
-
----
-
-## Stage C — Office Primitive Tools
-
-建立少量：
-
-~~~text
-list_files
-search_files
-read_file
-create_file
-edit_file
-validate_file
-~~~
-
-Tool 内部调用现有 Capability Runtime。
-
----
-
-## Stage D — End-to-End Office Task
-
-只用一个真实场景证明架构：
-
-> 根据 Workspace 中多份材料生成一份 Office 文档，用户提出修改意见后继续修改同一成果，最终校验并交付。
-
-链路：
-
-~~~text
-User Goal
-   ↓
-Session
-   ↓
-Workspace Search
-   ↓
-Partial Read
-   ↓
-AgentLoop
-   ↓
-Skill
-   ↓
-Create Artifact
-   ↓
-Validate
-   ↓
-User Feedback
-   ↓
-Artifact Patch
-   ↓
-New Version
-   ↓
-Diff
-   ↓
-Complete
-~~~
-
-完成这条链，才算真正进入 Office Agent。
-
----
-
-## Stage E — Skills
-
-正式接入：
-
-- SenseWright DeepRead；
-- Review；
-- Learning；
-- Practice；
-- 公文起草；
-- 财务分析；
-- 制度分析。
-
-Skill 保持 Markdown-first。
-
----
-
-## Stage F — Extensions
-
-根据真实需求依次引入：
-
-~~~text
-Approval
-MCP
-Automation
-Memory
-Plan
-Subagent
-~~~
-
-不是一次性全部实现。
-
----
-
-# 24. 架构评审问题
-
-以后每次设计新需求时，必须先回答以下问题。
-
-### Q1
-
-这是**产品功能**，还是新的 **Kernel Primitive**？
-
-默认答案应是产品功能。
-
----
-
-### Q2
-
-现有：
-
-~~~text
-Workspace
-Artifact
-Session
-AgentLoop
-Tool
-Extension
-~~~
-
-能否组合实现？
-
-如果可以，不新增 Core。
-
----
-
-### Q3
-
-它属于：
-
-- Tool；
-- Skill；
-- Extension；
-- Capability Plugin；
-
-中的哪一类？
-
----
-
-### Q4
-
-为什么不能通过 Extension Hook 实现？
-
-如果可以，不修改 AgentLoop。
-
----
-
-### Q5
-
-为什么不能通过 Tool 封装已有 Capability？
-
-如果可以，不把 Capability 直接暴露给 Agent。
-
----
-
-### Q6
-
-新增抽象是否来自真实失败模式？
-
-不能因为“成熟 Agent 应该有这个模块”就新增。
-
----
-
-### Q7
-
-是否破坏 Workspace / Policy / Artifact Contract？
-
-如果破坏，需要明确 Architecture Change。
-
----
-
-# 25. Kernel 变更门槛
-
-以下变更属于高门槛 Architecture Change：
-
-- 新增第七个 Kernel Primitive；
-- 修改 Workspace 信任边界；
-- 修改 Artifact 顶层 Contract；
-- 修改 Session 持久化语义；
-- 修改 AgentLoop 基本执行模型；
-- 修改 Tool Contract；
-- 修改 Extension Hook Contract；
-- 将某个 Extension 能力升级为 Core。
-
-任何此类变更必须在对应需求规格说明书中增加：
-
-~~~text
-Architecture Change
-├─ Problem
-├─ Why existing primitives are insufficient
-├─ Alternatives
-├─ Compatibility impact
-├─ Migration
-└─ Architecture document update
-~~~
-
-不得在实现代码中静默完成。
-
----
-
-# 26. 后续需求规格说明书的强制结构
-
-从本文档生效后，新的需求规格说明书必须增加：
-
-## Architecture Alignment
-
-至少回答：
-
-~~~text
-Architecture Baseline:
-  hmbuddy-architecture-vX.Y
-
-Product Capability:
-  ...
-
-Kernel Primitives Used:
-  ...
-
-Tools:
-  ...
-
-Skills:
-  ...
-
-Extensions:
-  ...
-
-Capability Plugins:
-  ...
-
-New Core Primitive:
-  No / Yes
-
-Architecture Deviation:
-  None / ...
-~~~
-
-如果：
-
-~~~text
-New Core Primitive = Yes
-~~~
-
-必须按上一节执行架构变更评审。
-
----
-
-# 27. 架构文档自身的迭代规则
-
-本文档不是不可修改的“宪法”。
-
-它必须随着真实工程经验持续演化。
-
-但要区分：
-
-## 27.1 Clarification
-
-例如：
-
-- 补充说明；
-- 增加示例；
-- 修正文案；
-- 细化 Tool / Skill 边界。
-
-更新：
-
-~~~text
-V0.1 → V0.2
-~~~
-
-可以直接更新 Canonical Document，并在 Change Log 记录。
-
----
-
-## 27.2 Compatible Evolution
-
-例如：
-
-- 增加新的 Hook；
-- ArtifactVersion 正式落地；
-- Session metadata 扩展；
-- Extension API 增加兼容字段。
-
-更新 Minor Version。
-
----
-
-## 27.3 Breaking Architecture Change
-
-例如：
-
-- Kernel 从 6 个原语增加到 7 个；
-- Session 被 TaskEngine 替代；
-- Capability Plugin 与 Extension 合并；
-- Artifact Contract 重构；
-- Workspace 安全边界变化。
-
-需要：
-
-1. 单独需求 / ADR；
-2. 解释为什么原架构不足；
-3. 给迁移方案；
-4. 更新本文档 Major Version；
-5. 明确旧规格受影响范围。
-
----
-
-# 28. Canonical Document 管理规则
-
-本文档作为**架构原文档**采用：
-
-> **单一 Canonical 文件持续更新 + Git 历史保留演进过程。**
-
 原则：
 
-- 不为每次小改复制多个 architecture-v0.1-final-final2 文件；
-- 当前文件始终代表最新有效架构；
-- Git Commit 保留历史；
-- 文档顶部维护当前版本；
-- 文档底部维护 Change Log；
-- Breaking Change 可额外增加 ADR。
-
-后续 Phase 规格只引用当前架构版本，不复制整套架构正文。
+1. Artifact 保留 Office 原生结构；
+2. 不把 DOCX / XLSX / PPTX 过早压成纯 Markdown；
+3. Tool Result 可以生成面向模型的 representation；
+4. Office Runtime 内部保留更丰富的结构事实；
+5. Locator / Patch / Diff 必须服务真实编辑场景，不提前设计万能 DSL。
 
 ---
 
-# 29. 架构反模式
+# 8. Agent-facing Office Tools
 
-以下模式默认禁止。
+模型看到的 Office Tools 必须少而稳定。
 
-## 29.1 Product Feature = Core Module
-
-错误：
+推荐初始 Tool 面：
 
 ~~~text
-产品新增 Memory
-→ 新建 MemoryEngine 进入 Kernel
-
-产品新增 Plan
-→ 新建 PlannerEngine 进入 Kernel
-
-产品新增 Automation
-→ 新建 AutomationEngine 进入 Kernel
+read_office_file
+search_office_content
+create_office_file
+edit_office_file
+validate_office_file
+compare_office_files
 ~~~
 
-优先考虑 Extension / Tool / Skill。
-
----
-
-## 29.2 每种文件一个 Agent Tool
-
-错误：
+不要直接暴露：
 
 ~~~text
 read_docx
-read_pdf
 read_xlsx
+read_pdf
 read_pptx
+docx_replace_paragraph
+xlsx_write_cell
+...
 ~~~
 
-Agent 应优先看到：
+格式差异由 Office Runtime 吸收。
+
+关系：
 
 ~~~text
-read_file
+Pi Agent
+  ↓
+Pi Tool
+  ↓
+HMBuddy Office Bridge
+  ↓
+Office Capability
+  ↓
+Python implementation
 ~~~
-
-格式差异由 Capability Runtime 处理。
 
 ---
 
-## 29.3 Adapter 直接暴露给 Agent
+# 9. Skills
 
-禁止：
+HMBuddy 不实现自己的 Skill Runtime。
+
+Bank Skills 直接遵循 Pi / Agent Skills 生态的 Skill 形式。
+
+例如：
 
 ~~~text
-Agent → DocxAdapter
+skills/
+├─ financial-analysis/
+│  └─ SKILL.md
+├─ regulation-review/
+│  └─ SKILL.md
+├─ document-drafting/
+│  └─ SKILL.md
+└─ sensewright/
+   ├─ deep-read/
+   ├─ review/
+   ├─ learning/
+   └─ practice/
 ~~~
 
-必须：
+Skill 负责：
+
+> Agent 应该如何完成一类工作。
+
+Tool 负责：
+
+> Agent 能做什么动作。
+
+Office Runtime 负责：
+
+> 动作如何可靠落到文件上。
+
+三者长期保持分离。
+
+---
+
+# 10. Banking Governance
+
+Pi 官方明确说明：其 working directory、project trust 和 transcript review 不是完整安全边界；默认工具与扩展拥有启动 Pi 的操作系统用户权限。
+
+因此银行级安全治理属于 HMBuddy 需要补充的领域能力。
+
+V1.0 的最低治理原则：
+
+## 10.1 External Network Default Deny
+
+除：
+
+- 内网模型 endpoint；
+- 明确审批的内部系统；
+- 允许的 MCP / API；
+
+之外，不默认开放外部网络。
+
+---
+
+## 10.2 Path Scope
+
+HMBuddy 必须对 Pi 可作用的 Office 工作目录做显式边界控制。
+
+`cwd` 是工作上下文，不等于安全边界。
+
+真正的安全应依赖：
+
+- OS account；
+- sandbox / container；
+- filesystem ACL；
+- extension policy；
+- process isolation。
+
+---
+
+## 10.3 Approval
+
+对以下动作至少支持 ASK / DENY：
+
+- destructive file mutation；
+- overwrite；
+- delete；
+- external send；
+- process execute；
+- network access；
+- COM automation；
+- sensitive-system write。
+
+优先使用 Pi Extension 的 tool lifecycle 事件实现，而不是建立第二个 Tool Runtime。
+
+---
+
+## 10.4 Audit
+
+审计至少记录：
 
 ~~~text
-Agent
-→ Tool
-→ Capability
-→ Provider
-→ Adapter
+session
+tool
+arguments summary
+target resource
+decision
+result
+timestamp
+artifact version/diff when applicable
 ~~~
 
----
-
-## 29.4 Skill 变成 Workflow Engine
-
-Skill 首先是工作方法。
-
-不要一开始编译成复杂 DAG。
+审计是企业治理能力，不要求侵入 Pi AgentLoop。
 
 ---
 
-## 29.5 Multi-Agent 解决单 Agent 没闭环的问题
+# 11. Configuration Authority
 
-如果单 Agent 还无法：
+V0.2 的 AppConfig / EffectiveConfig 不再默认作为 VNext 架构资产。
 
-- search；
-- read；
-- create；
-- edit；
-- validate；
-- resume；
+V1.0 配置分为两类：
 
-则不引入 Multi-Agent。
+## Pi-owned Configuration
+
+由 Pi 负责：
+
+- models；
+- providers；
+- sessions；
+- extensions；
+- skills；
+- resources；
+- MCP；
+- Pi runtime settings。
+
+## HMBuddy-owned Configuration
+
+仅保留：
+
+- Office Runtime；
+- bank policy；
+- internal endpoints；
+- audit；
+- approved roots；
+- product-specific settings。
+
+禁止复制 Pi 配置形成第二份“事实来源”。
 
 ---
 
-## 29.6 所有办公操作都走 Computer Use
+# 12. Session / Task / Memory / Planner
 
-文件能力优先走结构化接口。
+## 12.1 Session
 
-Computer Use 是 fallback，而不是主通路。
+Pi SessionManager 是唯一 Session Authority。
 
----
-
-# 30. 架构成功判断标准
-
-长期来看，如果 HMBuddy 新增 WorkBuddy 式产品功能时，大多数改动表现为：
+HMBuddy 不再实现：
 
 ~~~text
-新增 Tool
-或
-新增 Skill
-或
-新增 Extension
-或
-新增 Capability Plugin
+HMBuddySession
+SessionStore
+SessionIndex
 ~~~
 
-而：
+除非出现 Pi Session Contract 无法表达且经真实场景证明的需求。
+
+---
+
+## 12.2 Product Task
+
+产品上可以叫：
+
+- Task；
+- Conversation；
+- History；
+- Resume。
+
+但默认映射到 Pi Session / durable primitives。
+
+不要因为 UI 有 Task 就建设 TaskEngine。
+
+---
+
+## 12.3 Memory
+
+优先采用：
+
+- Pi Session；
+- Pi Extension；
+- Pi ecosystem package；
+- 外部企业知识存储。
+
+不提前建立 HMBuddy MemoryEngine。
+
+---
+
+## 12.4 Planner / Todo / Workflow
+
+不是 V1.0 Core。
+
+如果某个 Skill 通过 Markdown / tool state 已能完成，就不建设 PlannerEngine / Workflow DAG。
+
+---
+
+## 12.5 Multi-Agent / Subagent
+
+不进入 HMBuddy Core。
+
+优先跟随 Pi 上游或 Pi package 生态。
+
+---
+
+# 13. Product UI
+
+V1.0 不把 Desktop 作为第一优先级。
+
+开发验证顺序：
 
 ~~~text
-Kernel 基本不变
+Pi native CLI/TUI
+    ↓
+HMBuddy Extensions + Skills + Office Tools
+    ↓
+real bank-office scenarios
+    ↓
+only then decide dedicated GUI
 ~~~
 
-则说明本架构有效。
+旧 PySide6 Desktop：
 
-反之，如果每增加一个产品菜单都需要：
+> **属于 Legacy Implementation，不构成 VNext 兼容性要求。**
+
+未来如果需要独立 UI：
+
+- TypeScript UI 可直接嵌 Pi SDK；
+- 非 TypeScript UI 可通过 Pi RPC；
+- Product UI 不能成为第二个 Agent Runtime。
+
+---
+
+# 14. Upstream Compatibility Strategy
+
+“持续跟进 Pi”是 V1.0 的架构能力，不是项目管理口号。
+
+## 14.1 Exact Pin
+
+生产与开发基线使用明确的 Pi release / lockfile。
+
+禁止以 `latest` 作为可复现基线。
+
+---
+
+## 14.2 Compatibility Matrix
+
+至少维护：
 
 ~~~text
-新增 Engine
-新增 Manager
-新增 Runtime
-修改 AgentLoop
-修改 Workspace
+Pinned Pi release      → must pass
+Latest stable Pi       → compatibility check
+Pi main / preview      → optional early warning
 ~~~
 
-说明架构正在走向过度平台化，需要重新收敛。
+---
+
+## 14.3 Upstream Radar
+
+每次重要 Pi release 重点检查：
+
+- SDK；
+- Session；
+- Context / Compaction；
+- Tool Contract；
+- Extension lifecycle；
+- Skills；
+- MCP；
+- Codemode；
+- Security / Trust；
+- Windows；
+- Durable runtime。
+
+检查结果至少回答：
+
+1. 是否有 breaking change？
+2. 是否可以删除 HMBuddy 重复代码？
+3. 是否出现新的正式扩展面？
+4. HMBuddy integration layer 是否需要调整？
+5. Office Domain 是否受影响？
 
 ---
 
-# 31. 一句话架构定义
+## 14.4 Upstream-first Deletion
 
-HMBuddy 的长期架构定义为：
+当上游能力成熟后：
 
-> **WorkBuddy-like Office Product on a Pi-like Minimal Harness, with a Local-first and Artifact-native Office Runtime.**
-
-中文表达：
-
-> **产品能力向 WorkBuddy 学习，Agent 内核采用 Pi 式极简原语，Office 文件处理采用 HMBuddy 自己的 Artifact-native Runtime；产品功能通过 Tool、Skill、Extension 和 Capability Plugin 组合演进，而不是不断扩张 Core。**
+> 删除重复实现优先于维护兼容层。
 
 ---
 
-# 32. V0.1 Change Log
+# 15. Legacy Policy
 
-## V0.1 — 2026-10-02
+V0.2 及 Phase 1–2.2 进入 Legacy 状态。
 
-首次形成 Canonical Architecture Baseline。
+旧代码的定位：
 
-确立：
+> **历史实现、学习样本、算法素材库和 Eval 素材库。**
 
-1. 产品功能向 WorkBuddy 学习；
-2. Harness 架构哲学向 Pi Agent 学习；
-3. HMBuddy 保留 Artifact-native Office Runtime；
-4. Kernel 控制为 Workspace / Artifact / Session / AgentLoop / ToolRegistry / ExtensionHost 六个核心原语；
-5. Policy / Events / Context 作为 Kernel Invariants；
-6. File Capability Runtime 保留，但限定为文件能力 Provider Runtime；
-7. Capability Plugin 与 Agent Extension 分层；
-8. Skill 采用 Markdown-first / progressive disclosure；
-9. Task 产品概念优先映射为 Session + metadata；
-10. Planner / MCP / Memory / Automation / Multi-Agent 默认不进入 Core；
-11. Artifact 写能力采用 Patch / Version / Diff 路线；
-12. 后续需求规格说明书必须增加 Architecture Alignment；
-13. 架构文档采用单一 Canonical 文件持续迭代，重大变更通过版本与 ADR 管理。
+它们不再自动拥有以下权利：
+
+- API 兼容；
+- 目录兼容；
+- 数据结构兼容；
+- Runtime 兼容；
+- UI 兼容；
+- Plugin Contract 兼容。
+
+旧实现通过分支：
+
+~~~text
+legacy/pre-pi-v0.2
+~~~
+
+长期保留。
 
 ---
 
-# 33. V0.2 Change Log
+# 16. What May Be Salvaged
 
-## V0.2 — 2026-10-02
+## 优先重新评估并可能迁移
 
-Compatible Evolution / Clarification（Phase 2.1.1 完成后同步真实项目状态）。
+~~~text
+PDF table reconstruction
+OCR pipeline
+DOCX parsing details
+XLSX structure handling
+legacy Office COM integrations
+ArtifactBlock ideas
+ArtifactLocator ideas
+Office fixtures / evals
+bank-specific tests
+~~~
 
-更新：
+## 默认不迁移
 
-1. **Current State**：Phase 2.1 由"需求阶段"更新为"已完成"；Recent Task 表述统一为 Recent Activity（产品上从未建立 Task 域）。
-2. **Roadmap**：Stage A（Desktop Application Foundation）标记为已完成；下一阶段为 Minimal Agent Kernel。
-3. **Phase 2.1.1**：记录 Desktop & Runtime Integration Hardening 已完成——Catalog/Config/Workspace 身份/Plugin 状态/LLM ContextPolicy 集成缝隙收口，六个 Kernel Primitive 不变。
+~~~text
+plugin_runtime/
+llm/
+application/
+desktop/
+HMBuddy Session design
+HMBuddy AgentLoop design
+HMBuddy ToolRegistry design
+HMBuddy ExtensionHost design
+generic AppConfig duplication
+generic Workspace abstraction
+~~~
+
+迁移必须基于 V1.0 新接口重新实现或提取，而不是原目录复制。
+
+---
+
+# 17. VNext Recommended Repository Shape
+
+目标形态参考：
+
+~~~text
+HMBuddy/
+│
+├─ packages/
+│  └─ hmbuddy-pi/
+│     ├─ src/
+│     │  ├─ extension/
+│     │  ├─ tools/
+│     │  ├─ policy/
+│     │  ├─ audit/
+│     │  └─ office-bridge/
+│     └─ tests/
+│
+├─ office-runtime/
+│  ├─ pyproject.toml
+│  ├─ hmbuddy_office/
+│  │  ├─ artifact/
+│  │  ├─ docx/
+│  │  ├─ xlsx/
+│  │  ├─ pptx/
+│  │  ├─ pdf/
+│  │  ├─ ocr/
+│  │  ├─ patch/
+│  │  └─ validation/
+│  └─ tests/
+│
+├─ skills/
+│  ├─ financial-analysis/
+│  ├─ regulation-review/
+│  ├─ document-drafting/
+│  └─ sensewright/
+│
+├─ config/
+│  └─ bank/
+│
+├─ evals/
+└─ requirements/
+~~~
+
+这是方向约束，不要求第一次提交一次性建立全部目录。
+
+---
+
+# 18. Restart Sequence
+
+V1.0 推荐从最小纵向链重新启动。
+
+## Stage 0 — Pi Baseline
+
+目标：
+
+> 证明 Pi 在目标 Windows / 内网模型环境下稳定运行。
+
+只验证：
+
+- Pi install；
+- internal model；
+- Session；
+- Extension；
+- Skill；
+- Tool；
+- Windows / offline constraints。
+
+不迁移旧 HMBuddy Runtime。
+
+---
+
+## Stage 1 — Pi-native HMBuddy Extension
+
+只实现最小 Extension + Tool。
+
+目标：
+
+~~~text
+Pi
+→ HMBuddy Extension
+→ deterministic local tool
+→ Pi observation
+~~~
+
+---
+
+## Stage 2 — Office Bridge
+
+只接一个能力：
+
+~~~text
+read_office_file
+~~~
+
+打通：
+
+~~~text
+Pi Agent
+→ TypeScript Tool
+→ Python process
+→ Office file
+→ structured result
+→ Pi
+~~~
+
+这一步是新架构成立的第一验收线。
+
+---
+
+## Stage 3 — Office Read Pack
+
+逐步加入：
+
+- DOCX；
+- XLSX；
+- PDF；
+- PPTX；
+- OCR。
+
+只迁移真正需要的旧算法。
+
+---
+
+## Stage 4 — Office Write Lifecycle
+
+建立：
+
+~~~text
+Artifact
+→ Patch
+→ New Version
+→ Validate
+→ Diff
+~~~
+
+这是 HMBuddy 的核心领域竞争力。
+
+---
+
+## Stage 5 — Banking Skills
+
+接入：
+
+- SenseWright；
+- 公文；
+- 财务分析；
+- 制度；
+- 授信。
+
+全部优先采用 Pi / Agent Skills 格式。
+
+---
+
+## Stage 6 — Banking Governance
+
+根据真实内网部署补：
+
+- Approval；
+- Audit；
+- Network policy；
+- Path policy；
+- Sensitive-data policy；
+- internal connector policy。
+
+---
+
+## Stage 7 — Dedicated Product UI
+
+只有真实使用证明 Pi 原生 UI 不够时再建设。
+
+---
+
+# 19. Architecture Change Threshold
+
+以下任何变化必须先更新本 Baseline 或新增 ADR：
+
+1. Fork Pi；
+2. 修改 Pi 源码作为 HMBuddy 长期运行方式；
+3. 新建 HMBuddy AgentLoop；
+4. 新建 HMBuddy Session Framework；
+5. 新建平行 Tool Registry；
+6. 新建平行 Extension / Plugin Runtime；
+7. 将 TypeScript Pi Host 替换为其他主控架构；
+8. 将 Python Office Runtime 与 Agent Runtime重新耦合；
+9. 将 Office Artifact 提升为通用 Agent Kernel 概念；
+10. 引入独立 Planner / TaskEngine / MemoryEngine / Multi-Agent Framework；
+11. 修改 Office Capability Protocol 的基本责任边界。
+
+评审必须回答：
+
+- 上游 Pi 为什么不能满足？
+- 为什么 Extension / Skill / Tool 不能解决？
+- 真实 failure mode 是什么？
+- 新复杂度是否长期属于 HMBuddy？
+- 对未来 Pi 升级成本有什么影响？
+- 能否通过贡献上游而不是 Fork 解决？
+
+---
+
+# 20. Architecture Review Questions
+
+以后每个需求先回答：
+
+### Q1
+这是 Agent 基础设施，还是银行 Office 特性？
+
+如果是前者，先找 Pi。
+
+### Q2
+Pi 是否已经提供公开 Contract？
+
+如果有，不自研第二套。
+
+### Q3
+这是 Instruction、Executable Behavior，还是 Office Capability？
+
+对应优先映射：
+
+~~~text
+Instruction      → Skill
+Agent behavior   → Pi Extension / Tool
+Office operation → Python Office Runtime
+~~~
+
+### Q4
+这段代码如果 Pi 明天升级，是否会迫使 HMBuddy 大面积修改？
+
+如果会，说明 Pi 耦合扩散了。
+
+### Q5
+这段代码是不是 HMBuddy 真正的差异化资产？
+
+如果不是，应优先删除、上移到 Pi、或保持为薄适配。
+
+---
+
+# 21. Canonical Invariants
+
+V1.0 生效后长期保持以下不变量：
+
+1. **Pi owns the generic agent runtime.**
+2. **HMBuddy does not build a parallel Agent Kernel.**
+3. **No fork by default.**
+4. **Pi coupling stays thin and localized.**
+5. **TypeScript is the default Pi-native host.**
+6. **Python owns Office engineering, not Agent orchestration.**
+7. **Artifact is an Office domain model, not a generic Agent primitive.**
+8. **Skills use upstream-compatible Agent Skills format.**
+9. **Generic extensions use Pi Extension APIs instead of a HMBuddy plugin platform.**
+10. **Banking governance is explicit because Pi project trust is not a security boundary.**
+11. **Old code may be discarded; only proven domain capability is migrated.**
+12. **Upgradeability against Pi is a first-class architecture requirement.**
+
+---
+
+# 22. Final Architecture Statement
+
+HMBuddy V1.0 的核心架构结论是：
+
+> **HMBuddy 不再“像 Pi 一样实现一个 Agent”，而是直接成为 Pi 上的银行 Office Agent。**
+
+工程资源从：
+
+~~~text
+Build Agent Infrastructure
+~~~
+
+转向：
+
+~~~text
+Extend Pi
++
+Build Office Capabilities
++
+Build Banking Skills
++
+Build Enterprise Governance
+~~~
+
+这份 V1.0 是后续 VNext 需求、实现、评审和学习目录重构的唯一 Canonical Architecture Baseline。

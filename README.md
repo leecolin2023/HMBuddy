@@ -1,3 +1,23 @@
+# HMBuddy — Pi-native Banking Office Agent
+
+> **Architecture Reset — 2026-10-03**
+>
+> HMBuddy 已停止“自研通用 Agent Kernel”路线，VNext 直接建立在 Pi 上。
+> 当前 Canonical Architecture：
+> [HMBuddy Architecture Baseline V1.0 — Pi-native](./requirements/hmbuddy-architecture-baseline.md)
+>
+> V1.0 的核心边界：**Pi owns the generic agent runtime；HMBuddy owns Office capabilities, banking skills, enterprise governance and bank integrations.**
+>
+> 旧 Phase 1–2.2 实现已经进入 Legacy。它仍保留在当前仓库供迁移评估，并已固定到 `legacy/pre-pi-v0.2` 分支，但不再构成 VNext 的兼容性约束。后续允许按能力重新提取，也允许完全放弃。
+>
+> VNext 不再继续原规划中的 “Minimal Agent Kernel”。第一条新链路将从 **Pi SDK / Extension → HMBuddy Office Bridge → Python Office Runtime** 重新启动。
+
+---
+
+## Legacy Implementation Snapshot
+
+下面内容记录 Pi-native reset 前的实现状态，仅用于历史参考。
+
 # HMBuddy — Local Office Artifact Runtime + Desktop Entry
 
 HMBuddy 是一个面向企业内网、可离线运行的办公助手项目。
