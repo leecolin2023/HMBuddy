@@ -42,5 +42,6 @@
 - [Phase 1.1.1 — Plugin Runtime Contract Hardening V0.1](./phase-1.1.1-plugin-runtime-contract-hardening-v0.1.md)
 - [Phase 2 — Desktop Entry & Human-in-the-loop Workspace V0.1](./phase-2-desktop-entry-v0.1.md)
 - [Phase 2.1 — Desktop Application Foundation V0.1](./phase-2.1-desktop-application-foundation-v0.1.md)
+- [Phase 2.1.1 — Desktop & Runtime Integration Hardening V0.1](./phase-2.1.1-desktop-runtime-integration-hardening-v0.1.md)
 
-> Phase 1 / 1.1 / 1.1.1 已形成 Workspace、Artifact 和 File Capability Runtime 基础；Phase 2 建立 Desktop Entry；重构后的 Phase 2.1 只建设 Home、Config、AppState、Recent Workspace / Activity、Plugin Manager 与 Settings，不提前建立 RecentTaskEntry、Session、TaskEngine、AgentLoop、ToolRegistry 或 ExtensionHost。Phase 2.1 完成后，再按架构总纲进入 Minimal Agent Kernel。
+> Phase 1 / 1.1 / 1.1.1 已形成 Workspace、Artifact 和 File Capability Runtime 基础；Phase 2 建立 Desktop Entry；Phase 2.1 已实现 Home、Config、AppState、Recent Workspace / Activity、Plugin Manager 与 Settings，同时保持未引入 Session、TaskEngine、AgentLoop、ToolRegistry 或 ExtensionHost。Phase 2.1.1 专门收口实现后发现的 Desktop / Application / Runtime 集成缝隙，包括 Capability Catalog 单一真相、真实 LLM QA、Config False/0 语义、env 贯穿、Plugin Unavailable 状态、Recent Activity 映射、Workspace ID、跨平台 CI 契约、动态 File Picker、Plugin View 聚合和 QA Activity 隐私。2.1.1 完成且 GitHub Actions 全绿后，再进入 Minimal Agent Kernel。
