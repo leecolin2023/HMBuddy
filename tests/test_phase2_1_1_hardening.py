@@ -367,7 +367,7 @@ def test_t11_qa_question_text_not_persisted(tmp_path):
     ref = next(r for r in controller.refs if r.name == "sample.docx")
     controller.open_artifact(ref)
     sensitive_question = "客户A拟申请3亿元授信，风险如何？"
-    controller.record_qa(ref)
+    controller.record_qa()
 
     state_content = (tmp_path / "state.json").read_text(encoding="utf-8")
     assert sensitive_question not in state_content
@@ -406,40 +406,46 @@ def test_t7_workspace_identity_unified_and_stable(tmp_path):
 
 
 def test_t6_recent_activity_selection_by_entry_id(tmp_path):
-    pytest.importorskip("tkinter")
-    import tkinter as tk
+    """T6 / AC-I08：Recent Activity 按稳定 entry_id 选择并恢复（Widget 级）。"""
+    pytest.importorskip("PySide6.QtWidgets")
+    from PySide6.QtWidgets import QApplication
 
-    try:
-        root = tk.Tk()
-    except tk.TclError as exc:
-        pytest.skip(f"无可用显示环境: {exc}")
-    root.withdraw()
-    try:
-        controller = bootstrap_controller(
-            config_path=tmp_path / "config.json",
-            state_path=tmp_path / "state.json",
-            env={},
-        )
-        controller.open_workspace(FIXTURES_DIR)
-        ref = next(r for r in controller.refs if r.name == "sample.docx")
-        controller.open_artifact(ref)
-        controller.record_qa(ref)
+    from desktop.widgets.sidebar import Sidebar
 
-        controller.current_page = "home"
-        from desktop.pages.home import HomePage
+    qt_app = QApplication.instance() or QApplication([])
+    controller = bootstrap_controller(
+        config_path=tmp_path / "config.json",
+        state_path=tmp_path / "state.json",
+        env={},
+    )
+    controller.open_workspace(FIXTURES_DIR)
+    ref = next(r for r in controller.refs if r.name == "sample.docx")
+    controller.open_artifact(ref)
+    controller.record_qa()
 
-        page = HomePage(tk.Frame(root), controller, _ShellStub(controller))
-        qa_entry = controller.recent_activity()[0]
-        # INT-006：按稳定 entry_id 选中（Tk 自动 iid I001 不再参与）
-        page.activity_tree.selection_set(qa_entry.entry_id)
-        page.activity_tree.focus(qa_entry.entry_id)
-        page.open_selected_activity()
+    sidebar = Sidebar(controller)
+    qa_entry = controller.recent_activity()[0]
 
-        assert controller.current_page == "workspace"
-        assert controller.current_artifact is not None
-        assert controller.current_artifact.name == "sample.docx"
-    finally:
-        root.destroy()
+    # 渲染搜索结果并按稳定 entry_id 命中
+    sidebar.search_input.setText(qa_entry.title or "问答")
+    def _activity_row(index):
+        data = sidebar.search_results.item(index).data(0x0100) or {}
+        entry = data.get("entry")
+        return data.get("kind") == "activity" and entry is not None and entry.entry_id == qa_entry.entry_id
+
+    matches = [
+        index for index in range(sidebar.search_results.count()) if _activity_row(index)
+    ]
+    assert matches, "搜索结果中应包含该 QA activity"
+    item = sidebar.search_results.item(matches[0])
+
+    opened = {}
+    sidebar.activity_open_requested.connect(
+        lambda entry: opened.update(entry_id=entry.entry_id, workspace=entry.workspace_path)
+    )
+    sidebar._on_search_result_clicked(item)
+    assert opened.get("entry_id") == qa_entry.entry_id
+    assert Path(opened["workspace"]).resolve() == FIXTURES_DIR.resolve()
 
 
 class _ShellStub:

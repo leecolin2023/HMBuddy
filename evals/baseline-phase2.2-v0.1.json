@@ -1,0 +1,90 @@
+{
+  "phase": "phase-2.2-desktop-ux-shell-redesign",
+  "spec_version": "V0.1",
+  "recorded_at": "2026-10-02",
+  "architecture_baseline": "requirements/hmbuddy-architecture-baseline.md V0.2",
+  "baseline_commit_before": "00bc915",
+  "previous_baselines": [
+    "evals/baseline-phase2.1.1-v0.1.json",
+    "evals/baseline-phase2.1-v0.1.json",
+    "evals/baseline-phase1.1.1-v0.1.json",
+    "evals/baseline-phase1.1-v0.1.json",
+    "evals/baseline-phase1-v0.2.json",
+    "evals/baseline-phase1-v0.1.json"
+  ],
+  "environment": {
+    "python": "3.12.3",
+    "platform": "Windows 10 x64",
+    "pyside6": "6.11.2"
+  },
+  "scope": {
+    "replaced": [
+      "Tkinter root / event loop → PySide6 QApplication（desktop/app.py Composition Root）",
+      "desktop/shell.py → PySide6 三栏 Shell（Sidebar 248px / Conversation 弹性 / Preview 400px，Splitter 可调，Preview 默认隐藏）",
+      "desktop/pages/* Tk 页面 → Qt pages（plugins.py Card/Rich Row；settings.py 分类导航 General/Models/File Processing/Plugins/Advanced）"
+    ],
+    "new_widgets": [
+      "widgets/sidebar.py（品牌/+新建会话/搜索/工作区列表/插件/设置/Status Dot）",
+      "widgets/conversation.py（Header/Message Stream 四类 Item/Zero State/Composer）",
+      "widgets/file_card.py（名称+类型·大小，点击开 Preview）",
+      "widgets/preview/pane.py + renderers.py（Markdown/TXT/Unsupported/Empty 四态）"
+    ],
+    "reused_unchanged": [
+      "desktop/controller.py（无 Qt；新增 conversation transcript/new_conversation/search/open_ref_from_path/active_ref）",
+      "workspace/* services/* plugin_runtime/* adapters/* plugins/* llm/* application/*"
+    ],
+    "removed": ["Tkinter Desktop UI 全部移除（AC-01/AC-27），不长期维护两套 UI"],
+    "migration": {
+      "Home": "拆入 Sidebar（工作区/状态）与 Conversation Zero State（规格第 35 节）",
+      "Workspace Page": "拆入 Sidebar 行 / Search / File Card / Preview / Conversation（规格第 36 节）",
+      "System Status": "Sidebar 底部低权重 Status Dot（规格第 29 节）"
+    }
+  },
+  "acceptance_criteria": {
+    "AC-01 PySide6 正式 UI": "pass（守护测试：desktop 层零 tkinter 引用）",
+    "AC-02 无第二套 Domain": "pass（Controller/Runtime 未因 UI 重写）",
+    "AC-03 无 Session/AgentLoop/ToolRegistry/ExtensionHost": "pass（T9 守护继续通过）",
+    "AC-04 默认 Sidebar+Conversation，Preview 隐藏": "pass",
+    "AC-05 Sidebar 无 Home/Workspace 一级按钮": "pass",
+    "AC-06 Sidebar 六要素": "pass（新建会话/搜索/工作区/插件/设置/Status Dot）",
+    "AC-07 工作区以名称展示": "pass（行级+Tooltip，Missing 标记）",
+    "AC-08 New Conversation 仅清临时 UI": "pass（transcript/active artifact 清空、Workspace 保留、state 无 session 字段）",
+    "AC-09 中间为 Conversation Surface": "pass",
+    "AC-10 Artifact QA 在 Conversation 完成": "pass（复用 Reader→LLM 链路）",
+    "AC-11 Search 名称/路径": "pass（工作区/文件/最近活动分组）",
+    "AC-12 Search 无语义/正文索引": "pass（只匹配名称与路径元数据）",
+    "AC-13 File Card 打开 Preview": "pass",
+    "AC-14 Preview 可关闭恢复宽度": "pass",
+    "AC-15 Preview 支持 md/markdown/txt": "pass",
+    "AC-16 Markdown 用 Artifact.content 渲染": "pass（Qt setMarkdown；不执行脚本/不加载远程资源）",
+    "AC-17 TXT 用 Artifact.content 只读": "pass",
+    "AC-18 不绕过 Artifact Runtime": "pass（AST 级守护测试：preview 层无 open/read_text 调用）",
+    "AC-19 Office 格式 Unsupported Preview": "pass（区分可读取与可预览）",
+    "AC-20 Plugin Manager Card/Rich Row": "pass（复用 build_plugin_views 真实状态）",
+    "AC-21 Settings 分类导航": "pass",
+    "AC-22 Config Source 可解释": "pass（来源标签保留）",
+    "AC-23 Status Dot": "pass（Sidebar 底部，错误走内联/Notice）",
+    "AC-24 AppConfig/AppState 兼容": "pass（既有数据格式未变）",
+    "AC-25 回归": "pass（256 项既有测试全绿）",
+    "AC-26 源码启动": "pass（python -m desktop.app）",
+    "AC-27 不维护双 UI": "pass（Tk 已删除）",
+    "AC-28 Session 插槽": "pass（Sidebar 分区/Conversation/Preview 布局为 Session 演进预留）"
+  },
+  "test_run": {
+    "command": "python -m pytest -q",
+    "passed": 268,
+    "skipped": 4,
+    "failed": 0,
+    "previous": "256 passed / 4 skipped（Phase 2.2 前）",
+    "growth_reason": "+12：Tk 禁用守护（AC-01/27）、Preview AST 边界守护（AC-18）、Markdown/TXT/Unsupported 渲染（T6）、Conversation 语义与 New Conversation（T4/AC-08）、Qt offscreen Smoke（T10：启动/切换/Preview 开关/Resize/无 Workspace/无 LLM）",
+    "qt_test_platform": "QT_QPA_PLATFORM=offscreen；CI Linux 套件已安装 Qt 运行库（libegl1/libgl1/libxkbcommon0/libfontconfig1/libdbus-1-3）"
+  },
+  "known_limitations": [
+    "Conversation 为进程内临时 transcript：不持久化、不进入下一轮模型上下文（规格第 17 节）",
+    "Preview 仅 md/markdown/txt；Office 格式显示 Unsupported 说明但 QA 可用（规格第 24 节）",
+    "Markdown 渲染依赖 Qt Markdown 子集；不执行脚本、不加载远程资源",
+    "外部插件目录增删 UI 未做（Settings 提示编辑 config.json / 环境变量后 Rescan）",
+    "完整 Dark Mode / 双层 Icon Rail / Session History 均为非目标（规格第 6 节）",
+    "控制器 record_qa 不再接收问题文本（INT-011 隐私延续）"
+  ]
+}

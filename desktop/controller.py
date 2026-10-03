@@ -97,6 +97,9 @@ class AppController:
         self.workspace: Workspace | None = None
         self.refs: list = []
         self.current_artifact = None
+        self.active_ref = None
+        # Phase 2.2 Conversation：进程内临时 transcript（规格第 17 节：不持久化）
+        self.conversation_messages: list[dict] = []
 
     # ------------------------------------------------------------------
     # 导航（规格第 21 节：current_page + navigate）
@@ -128,6 +131,7 @@ class AppController:
         self.workspace = workspace
         self.refs = refs
         self.current_artifact = None
+        self.active_ref = None
         self.current_page = "workspace"
 
         limit = int(self.effective_config.recent_workspace_limit.value)
@@ -156,6 +160,7 @@ class AppController:
             raise RuntimeError("尚未打开工作区")
         artifact = self.reader.read_artifact(ref, workspace=self.workspace)
         self.current_artifact = artifact
+        self.active_ref = ref
         limit = int(self.effective_config.recent_activity_limit.value)
         record_activity(
             self.state,
@@ -170,21 +175,43 @@ class AppController:
         self.persist_state()
         return artifact
 
-    def record_qa(self, ref) -> None:
+    def record_qa(self) -> None:
         """文档问答活动：只记录导航入口（INT-011：不落问题正文，内网敏感信息不写盘）。"""
-        if self.workspace is None:
+        if self.workspace is None or self.current_artifact is None:
             return
-        artifact_name = ref.name if ref else (self.current_artifact.name if self.current_artifact else "")
+        artifact = self.current_artifact
         record_activity(
             self.state,
             ACTIVITY_ARTIFACT_QA,
             workspace_path=str(self.workspace.root_path),
-            artifact_path=ref.path if ref else "",
-            title=f"问答 · {artifact_name}",
-            resume_view={"page": "workspace", "artifact": ref.path if ref else ""},
+            artifact_path=artifact.path,
+            title=f"问答 · {artifact.name}",
+            resume_view={"page": "workspace", "artifact": artifact.path},
             limit=int(self.effective_config.recent_activity_limit.value),
         )
         self.persist_state()
+
+    def open_ref_from_path(self, path: Path) -> object:
+        """Phase 2.2 File Picker / Open File：按路径读取 Artifact。
+
+        路径在工作区内时走 Workspace Ref 链路；读取仍全部经过
+        ArtifactReader / Capability Runtime（规格 2.1.1 的边界不放松）。
+        """
+        path = Path(path)
+        if (
+            self.workspace is None
+            or not str(path).lower().startswith(str(self.workspace.root_path).lower())
+        ):
+            self.open_workspace(path.parent)
+        ref = next((r for r in self.refs if Path(r.path) == path), None)
+        if ref is not None:
+            return self.open_artifact(ref)
+        # 扩展名被禁用等场景：refs 中没有该文件——直接经 Reader 读取，
+        # 仍会得到 CapabilityDisabledError / Unsupported 等明确错误语义
+        artifact = self.reader.read_artifact(path, workspace=self.workspace)
+        self.current_artifact = artifact
+        self.active_ref = None
+        return artifact
 
     # ------------------------------------------------------------------
     # Recent 查询与操作（委托 application.state）
@@ -264,6 +291,54 @@ class AppController:
     def rescan_plugins(self) -> None:
         """规格第 28 节 Rescan：重建 Runtime 并刷新视图。"""
         self.save_settings(self.config)
+
+    # ------------------------------------------------------------------
+    # Conversation（Phase 2.2：Presentation Surface，非持久 Session——规格第 11/17 节）
+    # ------------------------------------------------------------------
+
+    def new_conversation(self) -> None:
+        """新建会话：只清空临时 UI 状态（transcript / active artifact），
+        保留当前 Workspace；不创建持久 session_id / Session Store（规格第 11 节）。"""
+        self.conversation_messages: list[dict] = []
+        self.current_artifact = None
+        self.active_ref = None
+        LOGGER.info("new conversation (transcript cleared, workspace kept)")
+
+    def append_conversation_message(self, role: str, text: str, **extra) -> dict:
+        """临时会话消息（进程内 transcript，不持久化、不默认进入下一轮上下文）。"""
+        message = {"role": role, "text": text, **extra}
+        self.conversation_messages.append(message)
+        return message
+
+    def search(self, query: str) -> dict:
+        """规格第 12 节：Sidebar 搜索——工作区 / 当前工作区文件 / 最近活动。
+        只匹配名称与路径元数据，不读取文件正文（AC-I12 同源约束 / AC-12）。"""
+        query = (query or "").strip().lower()
+        results = {"workspaces": [], "files": [], "activity": []}
+        if not query:
+            return results
+
+        for entry in self.recent_workspaces():
+            if (
+                query in entry.display_name.lower()
+                or query in entry.path.lower()
+            ):
+                results["workspaces"].append(entry)
+
+        if self.workspace is not None:
+            for ref in self.refs:
+                relative = getattr(ref, "relative_path", "") or ref.name
+                if (
+                    query in ref.name.lower()
+                    or query in str(relative).lower()
+                    or query in ref.extension.lower()
+                ):
+                    results["files"].append(ref)
+
+        for entry in self.recent_activity():
+            if query in (entry.title or "").lower():
+                results["activity"].append(entry)
+        return results
 
     def system_status(self):
         last_path = self.state.last_view.workspace_path or (

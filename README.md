@@ -23,6 +23,11 @@ HMBuddy 是一个面向企业内网、可离线运行的办公助手项目。
   False/0 合法配置、显式 env 全链路、Plugin Unavailable 状态与聚合视图、
   Workspace 身份统一、Recent Activity 稳定映射、QA 隐私、动态 File Picker。
   平台契约：**Windows-first Product, Cross-platform Core where applicable**。
+- **Phase 2.2：Desktop UX Shell Redesign**  
+  桌面 Presentation 迁移到 PySide6，重构为 Conversation-first 三栏 Shell
+  （Sidebar 导航 / Conversation 主工作面 / 按需 Artifact Preview——
+  Markdown / TXT 渲染），Home/Workspace 页面迁移进 Sidebar 与会话流；
+  不实现 Session / AgentLoop，仅为未来 Session 预留布局插槽。
 
 规格说明：
 [Phase 1](./requirements/phase-1-local-office-artifact-runtime-v0.1.md) ·
@@ -31,6 +36,7 @@ HMBuddy 是一个面向企业内网、可离线运行的办公助手项目。
 [Phase 2](./requirements/phase-2-desktop-entry-v0.1.md) ·
 [Phase 2.1](./requirements/phase-2.1-desktop-application-foundation-v0.1.md) ·
 [Phase 2.1.1](./requirements/phase-2.1.1-desktop-runtime-integration-hardening-v0.1.md) ·
+[Phase 2.2](./requirements/phase-2.2-desktop-ux-shell-redesign-v0.1.md) ·
 [架构基线 V0.2](./requirements/hmbuddy-architecture-baseline.md)
 历史文件提取工具 fce 的核心能力已拆解融入 `adapters/`（见"能力来源"）：
 支持格式扩展到 XLS / DOC / TXT / MD / CSV 等，PDF 增加矢量表格引擎（合并单元格、
@@ -338,8 +344,9 @@ python evals/fixtures/generate_fixtures.py            # 重新生成测试样例
 - 1.1.1 加固 Eval：权限强阻断、`.foo` 全新扩展名全链路、Manifest 权威、Provider 单次物化、external_plugin_dirs 直连、默认 Context 预算、Ref 信任域、可用性路由、Locator、success 语义、选择诊断、fallback allowlist、package 插件；
 - 2.1 产品 Eval：Config 优先级/Secret/原子写（T1/T7）、State 损坏恢复（T2）、Recent 行为（T3/T4）、Plugin 视图与配置（T5/T6）、Desktop 无头 Smoke 十条（T8）、架构守护（T9/AC-21）；
 - 2.1.1 集成加固 Eval：Catalog 单一真相 enable/disable（T1）、真实 OpenAI 兼容 ask 协议测试（T2）、False/0 配置（T3）、env 贯穿（T4）、Unavailable 状态（T5）、Recent Activity 按 entry_id 恢复（T6 Widget 级）、Workspace 身份统一（T7）、CI 平台契约（T8）、动态 Picker（T9）、多 Provider 聚合（T10）、QA 隐私（T11）；
+- 2.2 桌面重构 Eval：Tk 禁用守护（AC-01/27）、Preview 数据边界 AST 守护（AC-18）、Markdown/TXT/Unsupported 渲染（T6）、Conversation 语义（T4/AC-08）、Qt offscreen Smoke（T10）；
 - QA Eval：配置 LLM 环境变量后运行真实问答（关键词校验）；
-- Baseline：[evals/baseline-phase2.1.1-v0.1.json](./evals/baseline-phase2.1.1-v0.1.json)（当前；历史 2.1 / 1.1.1 / 1.1 / phase1 见同目录）。
+- Baseline：[evals/baseline-phase2.2-v0.1.json](./evals/baseline-phase2.2-v0.1.json)（当前；历史 2.1.1 / 2.1 / 1.1.1 / 1.1 / phase1 见同目录）。
 
 桌面层新增的格式化逻辑放在 `desktop.presenter`，可以在无 GUI 环境下测试。
 
