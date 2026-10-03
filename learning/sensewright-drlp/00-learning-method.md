@@ -162,98 +162,257 @@ D、R、L、P 可以长度完全不同。
 
 ---
 
-# 6. D — Deep Read：技术文章，而不是源码摘要
+# 6. D — Deep Read：Narrative Spine + Mechanism Depth
 
-D 的任务：
+D 的任务不是“把源码讲一遍”，而是：
 
-> **让一个没读过源码的人理解：这个设计到底解决什么问题，它真实如何运行，为什么会这样组织。**
+> **让一个没读过源码的人沿着一条因果主线，理解一个设计为什么一步步长成现在这样；同时，对主线中每一个关键机制都下钻到接近需求规格说明书的粒度。**
 
-内部执行顺序：
-
-## A. Problem before abstraction
-
-先找概念存在前的真实问题：
-
-- 没有它时系统怎么工作？
-- 哪个负担或失败模式逼出了它？
-- 为什么简单做法不够？
-
-不要从术语定义开始。
-
-## B. Locate the real entry point
-
-找到真实入口，例如：
+Deep Read 同时沿两条轴工作。
 
 ~~~text
-createAgentSession()
-session.prompt()
-pi.registerTool()
-OfficeBridgeClient.read()
+横轴：Narrative Spine
+
+问题
+→ 第一个最小解决
+→ 新问题
+→ 新机制
+→ 新问题
+→ 新机制
+→ 最终架构自然出现
 ~~~
 
-回答：
+~~~text
+纵轴：Mechanism Depth
 
-- 谁调用它；
-- 创建了什么；
-- 谁拥有状态；
-- 下一步进入哪里。
+为什么存在
+→ 什么时候触发
+→ 接收什么
+→ 内部负责什么
+→ 改变什么状态
+→ 产出什么
+→ 与谁协作
+→ 失败或缺失会怎样
+→ 真实源码 / test 锚点
+~~~
 
-## C. Trace one real call chain
+两条轴缺一不可。
+
+只有横轴，没有纵深，会变成“故事讲得顺，但每个机制只是点名”。
+
+只有纵深，没有横轴，会退化成“API 手册 / 类说明书”。
+
+## A. Narrative Spine：章节顺序必须由问题推动
+
+正文不能优先按源码目录、类定义、方法列表或 API 顺序展开。
+
+必须先恢复一条认知因果链：
+
+~~~text
+原始矛盾是什么？
+↓
+最简单的方案能解决什么？
+↓
+它留下了什么新问题？
+↓
+哪个机制因此必须出现？
+↓
+这个机制又制造或暴露了什么新问题？
+↓
+下一个机制为什么自然出现？
+~~~
+
+章节之间必须能够回答：
+
+> **为什么读者此刻必须进入下一章？**
+
+如果下一章只是因为“源码里下一个文件叫这个名字”，Narrative Gate 失败。
+
+## B. Problem before abstraction
+
+第一次出现一个概念时，先解释它被什么问题逼出来。
+
+不要先写：
+
+~~~text
+AgentSession 是……
+SessionManager 是……
+Compaction 是……
+~~~
+
+而应先让读者看见：
+
+~~~text
+一次 Agent run 已经能 Tool Calling，
+但用户第二轮继续追问时，历史由谁负责？
+
+历史越来越长后，模型上下文装不下怎么办？
+
+Agent 正在执行工具时，用户又输入新要求怎么办？
+
+一次 provider 请求失败，整段工作是否必须结束？
+~~~
+
+然后机制才有出场理由。
+
+## C. Mechanism Depth：禁止“裸机制名”
+
+只要一个概念或机制对主线成立是必要的，就不能只出现名字或一句定义。
+
+内部调查至少必须覆盖以下九个维度：
+
+| 维度 | 必须弄清 |
+|---|---|
+| Purpose | 它具体解决哪个问题 |
+| Trigger | 什么条件下进入它 |
+| Input | 它接收哪些对象 / 状态 |
+| Responsibility | 它内部真正负责什么 |
+| State | 它读取、维护、修改什么状态 |
+| Output | 它向后续产生什么 |
+| Collaboration | 它的上下游分别是谁 |
+| Failure / Boundary | 没有它、失败或越界时会怎样 |
+| Source Anchor | 源码 / checked test / docs 在哪里 |
+
+这是**作者内部调查清单，不是固定正文模板**。
+
+最终文章仍然按 Narrative Spine 自然叙述，不要求每个机制机械出现九个小标题。
+
+## D. 需求规格说明书级粒度
+
+“讲清一个机制”至少应达到这样的粒度：
+
+~~~text
+为什么需要 Queue
+↓
+Pi 区分 steer / followUp
+↓
+两者各自在什么时点被消费
+↓
+消息进入哪个内部队列 / Agent queue
+↓
+queue_update 暴露什么状态
+↓
+它如何改变下一次 LLM request 的输入
+↓
+如果没有区分会出现什么交互问题
+↓
+对应源码与 test 在哪里
+~~~
+
+而不是：
+
+~~~text
+AgentSession 还负责 queue、compaction、retry。
+~~~
+
+同样，SessionManager 至少要说明：
+
+- append-only tree 是什么；
+- leaf / branch 如何表示当前路径；
+- buildSessionProjection / buildSessionContext 解决什么；
+- compaction entry 如何改变模型可见 context；
+- inMemory 与持久化只改变存储，不改变 Session authority。
+
+## E. Locate real entry point，但不要让入口支配叙事
+
+必须找到真实入口，例如 createAgentSession()、session.prompt()、pi.registerTool()、SessionManager.buildSessionContext()、AgentLoop.runLoop()。
+
+但入口是**证据锚点**，不是章节排序原则。
+
+可以先从问题讲起，等机制自然出现时再落到源码。
+
+## F. Trace one real call chain
 
 至少跟踪一条具体输入：
 
 ~~~text
-用户输入了什么
-session 收到了什么
-模型请求里有哪些 tools
-模型返回了什么结构
-哪个函数识别 toolCall
-哪个函数执行
-toolResult 放进哪里
-为什么模型会再跑一轮
-什么条件下停止
+用户输入什么
+↓
+当前 Session / Context 是什么
+↓
+模型看见哪些 Tool declaration
+↓
+模型返回什么 toolCall
+↓
+runtime 如何验证、阻断或执行
+↓
+Tool Result 如何进入消息与 Session
+↓
+为什么下一轮模型会发生
+↓
+何时 AgentLoop 结束
+↓
+为什么 AgentSession 还可能继续 retry / queue / compaction
+↓
+何时真正 agent_settled
 ~~~
 
-## D. Preserve cognitive engines
+不能在关键中间层直接用“Pi 处理”“系统继续”“Session 管理”跳过去。
 
-必须保留真正承担理解功能的：
+## G. Preserve cognitive engines
 
-- 关键代码片段；
-- 真实对象；
-- 对比；
-- 失败例子；
-- 调用关系；
-- 状态变化；
-- 有证据的历史演变；
-- 必要解释冗余。
+必须保留真正承担理解功能的关键代码、真实对象、数据形态、状态变化、对比、失败例子、调用关系、checked test、有证据的历史演变和必要解释冗余。
 
-## E. Explain choices carefully
+Deep Read 可以删除语言重复，但不能删除“为什么下一步成立”的桥梁。
 
-源码 / docs / changelog 有证据时可以说明设计原因。只有推断时，必须明确写“从当前实现可以推断”。
+## H. Explain choices carefully
 
-## F. Abstract last
+源码 / docs / changelog 有证据时可以说明设计原因。只有推断时，必须明确写“从当前实现可以推断……”。
 
-只有具体对象和调用链已经看懂，才形成概念定义、ownership、边界和 mental model。
+## I. Abstract last
+
+只有具体问题、运行路径、关键机制都已经看懂后，才形成概念定义、ownership、不变量、边界和可迁移 mental model。
+
+抽象是已理解事实的压缩，不是解释的起点。
 
 ---
 
 # 7. D Acceptance Gate
 
-D 只有在陌生读者能够回答以下问题时才完成：
+D 只有同时通过 Narrative Gate 与 Mechanism Depth Gate 才完成。
 
-1. 为什么这个概念存在？
-2. 没有它时会发生什么？
-3. 真实入口函数 / 模块在哪里？
-4. 能否跟踪一个具体输入走完主要调用链？
-5. 能否指出关键状态在哪里改变？
-6. 能否解释相邻概念的职责边界？
-7. 哪些结论来自源码，哪些是解释或项目选择？
-8. 把概念名遮掉后，能否仍用自己的话说明它解决什么问题？
+## 7.1 Narrative Gate
 
-任何关键问题仍需读者自行脑补，D 继续展开。
+陌生读者应能回答：
+
+1. 文章最开始的原始矛盾是什么？
+2. 每个主要机制为什么在那个位置出现？
+3. 上一节留下了什么未解决问题，逼出了下一节？
+4. 如果交换两个主要章节，因果链是否会断？
+5. 最终架构是否像“被问题一步步推导出来”，而不是作者一次性宣布？
+
+任何一章无法回答“为什么现在讲它”，Narrative Gate 失败。
+
+## 7.2 Mechanism Depth Gate
+
+对正文中每一个关键机制，陌生读者至少应能说明：
+
+1. 它为什么存在？
+2. 什么条件触发它？
+3. 它接收什么输入或前置状态？
+4. 它具体承担哪些职责？
+5. 它改变或维护什么状态？
+6. 它向后续输出什么？
+7. 它与上下游分别怎么协作？
+8. 没有它或它失败时，具体会坏在哪里？
+9. 真实源码 / test / docs 的锚点在哪里？
+
+如果正文出现 SessionManager、queue、compaction、retry、extension lifecycle 等关键机制，但读者只能知道“有这些模块”，不能回答以上问题，就视为**裸机制名**，D 未完成。
+
+## 7.3 Whole-article Gate
+
+此外，读者还应能：
+
+- 跟踪一个具体输入走完主要调用链；
+- 指出关键状态在哪里改变；
+- 区分相邻概念的职责边界；
+- 区分 Source fact / Derived explanation / HMBuddy decision；
+- 把概念名遮掉后，仍能用自己的话解释它解决什么问题；
+- 在不重新读源码的情况下，对一个相邻变化做出有依据的预测。
+
+任何关键步骤仍需读者自行脑补，D 继续展开。
 
 ---
-
 # 8. R — Review：独立审阅
 
 R 重新读取 Raw Source，D 只能导航，不能当证据。
