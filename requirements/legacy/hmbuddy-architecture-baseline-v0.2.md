@@ -1,3 +1,9 @@
+> **Legacy Notice**  
+> 本文档已于 2026-10-03 被 [HMBuddy Architecture Baseline V1.0 — Pi-native](../hmbuddy-architecture-baseline.md) 取代。  
+> 当前状态：**Legacy / Archived**。下方正文保留历史原文，因此其中的“状态：Active”等字段只代表当时状态，不再代表当前架构。
+
+---
+
 # HMBuddy 架构设计总纲 — WorkBuddy-like Product on a Pi-like Minimal Harness
 
 **文档性质：** Canonical Architecture Baseline / 架构原文档  
