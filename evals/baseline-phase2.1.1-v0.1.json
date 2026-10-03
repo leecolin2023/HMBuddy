@@ -1,0 +1,68 @@
+{
+  "phase": "phase-2.1.1-desktop-runtime-integration-hardening",
+  "spec_version": "V0.1",
+  "recorded_at": "2026-10-02",
+  "baseline_commit_before": "161114c",
+  "spec_baseline_commit": "161114c78e631bb5b89208071c5496dc87c7b14e",
+  "architecture_baseline": "requirements/hmbuddy-architecture-baseline.md V0.2（本次由 V0.1 升级，Compatible Evolution）",
+  "previous_baselines": [
+    "evals/baseline-phase2.1-v0.1.json",
+    "evals/baseline-phase1.1.1-v0.1.json",
+    "evals/baseline-phase1.1-v0.1.json",
+    "evals/baseline-phase1-v0.2.json",
+    "evals/baseline-phase1-v0.1.json"
+  ],
+  "environment": {
+    "python": "3.12.3",
+    "platform": "Windows 10 x64"
+  },
+  "bug_fixes": {
+    "INT-001 (P0) Catalog 单一真相": "pass——AppController.open_workspace 显式传入 AppRuntime Capability Catalog；save_settings/Rescan 后以新 Catalog 重建已打开 Workspace 并刷新文件列表（方案 A）；T-001A/B/C 全部验证",
+    "INT-002 (P0) LLM Client 初始化": "pass——OpenAICompatibleClient 调用 super().__init__(context_policy)；协议级 fake-urlopen 测试验证 ask() 无 AttributeError、默认 ContextPolicy 截断生效、payload 含 System Prompt + Context + Question（T2/AC-I03/I04）",
+    "INT-003 (P1) False/0 合法": "pass——DesktopConfig 字段改 None 哨兵（None=未设置）；resolve 拆分 _resolve_string/_resolve_bool/_resolve_int/_resolve_string_list；False/0 保留 User Config 来源（T3/AC-I05）",
+    "INT-004 (P1) env 贯穿": "pass——bootstrap_controller 一次性解析 EffectiveConfig（显式 env），Controller 消费解析结果并在 save_settings 时沿用 self.env（T4/AC-I06）",
+    "INT-005 (P1) Unavailable 真实状态": "pass——Plugin 聚合状态：至少一个 Provider 可用=Enabled；已加载但全部不可用=Unavailable（附各 Provider 原因）（T5/AC-I07）",
+    "INT-006 (P1) Recent Activity 映射": "pass——Treeview iid 使用稳定 entry_id/workspace_id + by_id 字典映射；Widget 级测试验证选择→恢复（T6/AC-I08）",
+    "INT-007 (P1) Workspace 身份统一": "pass——RecentWorkspace.workspace_id 复用 Core make_workspace_id；旧随机 ID/缺失按 path 重算迁移；跨重启一致（T7/AC-I09）",
+    "INT-008 (P1) CI 平台契约": "implemented——Windows Full Suite（3.10+3.12 全量）+ Linux Cross-platform Core Suite（-m 'not windows_only'，Windows-only 用例 skipif/标记显式跳过）+ wheel smoke；平台中立化：state 大小写去重测试拆分，.doc COM 测试标记 windows_only；Actions 结果见推送后 GitHub Actions（AC-I10/AC-I11）",
+    "INT-009 (P2) File Picker 动态化": "pass——Home/Workspace 选择器从 Catalog.artifact_extensions() 生成 filter，保留 '所有文件 (*.*)' 兜底（T9/AC-I12）",
+    "INT-010 (P2) Plugin 视图聚合": "pass——PluginView 一 Plugin 一行 + ProviderView 明细（provider_id/capabilities/priority/availability）；多 Provider 测试验证聚合与 Manifest 权威 priority（T10/AC-I13）",
+    "INT-011 (P2) QA 隐私": "pass——record_qa 标题改为 '问答 · <artifact name>'，问题正文不落 state.json（T11/AC-I14）",
+    "INT-012 (Docs) 架构基线升级": "pass——hmbuddy-architecture-baseline.md V0.1→V0.2：Phase 2.1 标记已完成、Recent Task→Recent Activity、Stage A Completed、记录 2.1.1 完成（AC-I16）"
+  },
+  "test_run": {
+    "command": "python -m pytest -q",
+    "passed": 256,
+    "skipped": 4,
+    "failed": 0,
+    "previous": "243 passed / 4 skipped（Phase 2.1.1 前）",
+    "growth_reason": "+13：Catalog 单一真相 enable/disable/rescan（T1/AC-I01/I02）、真实 OpenAI 兼容 ask 协议测试（T2/AC-I03/I04）、False/0 配置（T3/AC-I05）、env 贯穿（T4/AC-I06）、Unavailable（T5/AC-I07）、Recent Activity entry_id 选择（T6/AC-I08）、Workspace 身份（T7/AC-I09）、动态 Picker（T9/AC-I12）、多 Provider 聚合（T10/AC-I13）、QA 隐私（T11/AC-I14）",
+    "windows_full_local": "256 passed / 4 skipped（Windows 10 x64, Python 3.12.3）",
+    "ci_note": "Linux cross-platform 套件与 wheel smoke 在推送后由 GitHub Actions 执行；本地已通过平台中立化修复 Linux 失败根因（Windows 路径语义测试拆分 + .doc COM 测试标记）"
+  },
+  "acceptance_criteria": {
+    "AC-I01 Runtime Catalog 单一真相": "pass",
+    "AC-I02 Rescan 一致": "pass",
+    "AC-I03 Real LLM QA 可运行": "pass",
+    "AC-I04 Context Budget 保持有效": "pass",
+    "AC-I05 False/0 配置合法": "pass",
+    "AC-I06 Explicit Environment 全链路有效": "pass",
+    "AC-I07 Plugin Unavailable 状态真实": "pass",
+    "AC-I08 Recent Activity GUI 可恢复": "pass（Widget 级测试）",
+    "AC-I09 Workspace ID 唯一": "pass",
+    "AC-I10 CI 全绿": "pending-verification（工作流已按契约重写，推送后以 GitHub Actions 实际运行为准）",
+    "AC-I11 Windows-first 契约明确": "pass（README/CI/tests 三处明确）",
+    "AC-I12 Dynamic File Picker": "pass",
+    "AC-I13 Plugin Product View 聚合": "pass",
+    "AC-I14 QA Activity 默认不落问题正文": "pass",
+    "AC-I15 无新增 Kernel Primitive": "pass（T9/T12 架构守护继续通过）",
+    "AC-I16 Architecture Baseline 更新": "pass（V0.2）",
+    "AC-I17 Regression": "pass"
+  },
+  "known_limitations": [
+    "AC-I10 的最终'CI 全绿'结论依赖推送后 GitHub Actions 实际运行结果；本地已修复 Linux 失败根因但无法在本机执行 Linux 套件",
+    "python_requires / platform 校验维持 Phase 1.1.1 的 '>=X.Y[.Z]' 简单解析",
+    "Recent Activity 保存仍为立即写盘（数据量小）；debounce 保持实现细节",
+    "Qt/自动化 GUI 框架仍未引入；Widget 级测试使用真实 Tk（无显示环境自动跳过）"
+  ]
+}

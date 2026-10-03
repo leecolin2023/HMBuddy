@@ -14,6 +14,8 @@ import uuid
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
+
+from workspace.artifact import make_workspace_id
 from typing import Any, Optional
 
 LOGGER = logging.getLogger("hmbuddy.state")
@@ -41,7 +43,11 @@ class LastView:
 @dataclass
 class RecentWorkspace:
     """最近工作区（规格第 18 节）：排序 Pinned → last_opened_at DESC，
-    pinned 项不因 limit 自动淘汰。"""
+    pinned 项不因 limit 自动淘汰。
+
+    INT-007：workspace_id 复用 Core Workspace 的稳定 ID（make_workspace_id），
+    不再使用随机 UUID——为未来 Session 提供唯一 Workspace 身份锚点。
+    """
 
     workspace_id: str
     path: str
@@ -103,10 +109,15 @@ def _parse_state(data: Any, errors: list[str]) -> AppState:
         if not isinstance(item, dict):
             errors.append("recent_workspaces 含非法条目，已忽略")
             continue
+        entry_path = str(item.get("path") or "")
+        workspace_id = str(item.get("workspace_id") or "")
+        # INT-007 兼容（规格 10.3）：旧随机 ID / 缺失 → 按 path 重算稳定 ID
+        if not workspace_id.startswith("ws_"):
+            workspace_id = make_workspace_id(entry_path or uuid.uuid4().hex)
         state.recent_workspaces.append(
             RecentWorkspace(
-                workspace_id=str(item.get("workspace_id") or uuid.uuid4().hex[:12]),
-                path=str(item.get("path") or ""),
+                workspace_id=workspace_id,
+                path=entry_path,
                 display_name=str(item.get("display_name") or ""),
                 last_opened_at=str(item.get("last_opened_at") or ""),
                 pinned=bool(item.get("pinned")),
@@ -215,10 +226,12 @@ def record_workspace_open(
         existing.last_opened_at = opened_at
         if display_name:
             existing.display_name = display_name
+        # INT-007：旧状态迁移后 ID 统一为 Core Workspace ID
+        existing.workspace_id = make_workspace_id(normalized)
         entry = existing
     else:
         entry = RecentWorkspace(
-            workspace_id=uuid.uuid4().hex[:12],
+            workspace_id=make_workspace_id(normalized),
             path=normalized,
             display_name=display_name or Path(normalized).name,
             last_opened_at=opened_at,

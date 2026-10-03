@@ -1,4 +1,6 @@
 """遗留格式 Eval（fce 能力融入）：.xls 经 xlrd 读取；.doc 在无 Word/WPS 时明确报错。"""
+import sys
+
 import pytest
 
 from services.artifact_reader import read_artifact
@@ -80,6 +82,8 @@ def test_corrupt_doc_raises_parse_error(tmp_path):
         reader.read_artifact(target)
 
 
+@pytest.mark.windows_only
+@pytest.mark.skipif(sys.platform != 'win32', reason='.doc COM 为 Windows-only 能力（INT-008）')
 def test_doc_com_blocked_without_permission(tmp_path, monkeypatch):
     """BUG-001 / AC-H01 / T1：默认 Policy 下 .doc 不得实际启动 Word/WPS。
 

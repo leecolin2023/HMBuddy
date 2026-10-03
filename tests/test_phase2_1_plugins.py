@@ -202,11 +202,9 @@ def test_t5_unavailable_view_reason(tmp_path, monkeypatch):
     runtime = assemble_app_runtime(effective)
     views = {v.plugin_id: v for v in build_plugin_views(runtime.assembly)}
     foo = views["test.foo.reader"]
-    if sys.platform.startswith("win"):
-        assert foo.status == "Enabled"
-        assert "platform" in foo.availability_reason
-    else:
-        assert foo.availability_reason is None or "platform" not in foo.availability_reason
+    # INT-005 / AC-I07：已加载但平台不满足 → 真实 Unavailable 状态
+    assert foo.status == "Unavailable"
+    assert "platform" in foo.availability_reason
 
 
 import sys  # noqa: E402

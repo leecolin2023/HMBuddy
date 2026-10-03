@@ -20,7 +20,6 @@ from plugin_runtime import (
 )
 from plugin_runtime.catalog import CapabilityCatalog, reset_default_catalog
 from plugin_runtime.discovery import DiscoveredPlugin
-from plugin_runtime.errors import PluginCompatibilityError
 from plugin_runtime.policy import PermissionPolicy
 
 from .config import EffectiveConfig, resolve_effective_config
@@ -120,8 +119,22 @@ STATUS_UNAVAILABLE = "Unavailable"
 
 
 @dataclass
+class ProviderView:
+    """插件内单个 Provider 的详情（INT-010：详情区域展示）。"""
+
+    provider_id: str
+    capabilities: list[str]
+    priority: int
+    availability_reason: str  # "" 表示当前可用
+    available: bool
+
+
+@dataclass
 class PluginView:
-    """Plugin Manager 单行视图（规格第 23 节全部字段）。"""
+    """Plugin Manager 一等视图（INT-010 / AC-I13）：一 Plugin 一行。
+
+    集合字段取各 Provider 的并集；Provider 明细放在 providers 列表供详情区。
+    """
 
     plugin_id: str
     name: str
@@ -133,7 +146,8 @@ class PluginView:
     capabilities: list[str]
     declared_permissions: list[str]
     effective_permissions: list[str]
-    availability_reason: str
+    providers: list[ProviderView]
+    availability_reason: str  # 聚合原因：Enabled 为空；Unavailable 汇总各原因
     load_error: str
     is_builtin: bool
 
@@ -145,9 +159,38 @@ class PluginView:
             STATUS_INCOMPATIBLE: "不兼容",
             STATUS_UNAVAILABLE: "不可用",
         }.get(self.status, self.status)
-        if self.status == STATUS_ENABLED and self.availability_reason:
-            label += f"（不可用：{self.availability_reason}）"
+        if self.status == STATUS_UNAVAILABLE and self.availability_reason:
+            label += f"（{self.availability_reason}）"
         return label
+
+
+def _provider_view(provider) -> ProviderView:
+    try:
+        reason = provider.availability_reason(PluginContextStub())
+        available = reason is None
+    except Exception as exc:  # 探针异常本身也是可观察信息
+        reason = f"{type(exc).__name__}: {exc}"
+        available = False
+    return ProviderView(
+        provider_id=getattr(provider, "provider_id", "?"),
+        capabilities=[getattr(provider, "capability_id", "")],
+        priority=int(getattr(provider, "priority", 100)),
+        availability_reason=reason or "",
+        available=available,
+    )
+
+
+def _aggregate_status(provider_views: list[ProviderView]) -> tuple[str, str]:
+    """INT-005 / 规格 8.3：Enabled = 至少一个 Provider 可用；
+    Unavailable = 已加载但当前没有任何可用 Provider。"""
+    if any(item.available for item in provider_views):
+        return STATUS_ENABLED, ""
+    reasons = [
+        f"{item.provider_id}: {item.availability_reason}"
+        for item in provider_views
+        if not item.available
+    ]
+    return STATUS_UNAVAILABLE, "; ".join(reasons) or "当前环境不可用"
 
 
 def build_plugin_views(
@@ -155,13 +198,13 @@ def build_plugin_views(
 ) -> list[PluginView]:
     """把现有 Runtime 状态映射为 Plugin Manager 视图（T5 / AC-14 / AC-17）。
 
-    - Enabled：已加载且在 Effective Registry 中；
+    一 Plugin 一行（INT-010），按 Plugin 聚合状态（INT-005）：
+    - Enabled：已加载且至少一个 Provider 当前可用；
+    - Unavailable：已加载但没有任何 Provider 当前可用；
     - Disabled：被 AppConfig 禁用（仍可 Discovery / 展示 Manifest）；
-    - Load Failed / Incompatible：装配失败（原因可观察）；
-    - Unavailable：已加载但当前环境不可用（platform/python/依赖）。
+    - Load Failed / Incompatible：装配失败（原因可观察）。
     """
     policy = policy or assembly.runtime.policy
-    probe_context = PluginContextStub()
     views: list[PluginView] = []
 
     disabled_ids = {item.manifest.id for item in assembly.disabled}
@@ -169,34 +212,36 @@ def build_plugin_views(
     for failed_id, message in assembly.load_report.failures:
         failure_by_id.setdefault(failed_id, message)
 
-    # 已加载（Enabled / Unavailable）
+    # 已加载（Enabled / Unavailable）——一 Plugin 一行，聚合 Providers
     for loaded in assembly.load_report.loaded:
         manifest = loaded.discovered.manifest
-        for provider in loaded.providers:
-            declared = list(getattr(provider, "declared_permissions", ()) or ())
-            try:
-                reason = provider.availability_reason(probe_context)
-            except Exception as exc:  # 探针异常本身也是可观察信息
-                reason = f"{type(exc).__name__}: {exc}"
-            views.append(
-                PluginView(
-                    plugin_id=manifest.id,
-                    name=manifest.name,
-                    version=manifest.version,
-                    api_version=manifest.api_version,
-                    source=loaded.discovered.source,
-                    status=STATUS_ENABLED,
-                    extensions=list(manifest.extensions),
-                    capabilities=manifest.capability_ids(),
-                    declared_permissions=declared,
-                    effective_permissions=sorted(
-                        set(declared) & set(policy.granted_permissions())
-                    ),
-                    availability_reason=reason or "",
-                    load_error="",
-                    is_builtin=loaded.discovered.source == "builtin",
-                )
+        provider_views = [_provider_view(provider) for provider in loaded.providers]
+        status, aggregate_reason = _aggregate_status(provider_views)
+        declared = (
+            list(getattr(loaded.providers[0], "declared_permissions", ()) or ())
+            if loaded.providers
+            else []
+        )
+        views.append(
+            PluginView(
+                plugin_id=manifest.id,
+                name=manifest.name,
+                version=manifest.version,
+                api_version=manifest.api_version,
+                source=loaded.discovered.source,
+                status=status,
+                extensions=list(manifest.extensions),
+                capabilities=manifest.capability_ids(),
+                declared_permissions=declared,
+                effective_permissions=sorted(
+                    set(declared) & set(policy.granted_permissions())
+                ),
+                providers=provider_views,
+                availability_reason=aggregate_reason,
+                load_error="",
+                is_builtin=loaded.discovered.source == "builtin",
             )
+        )
 
     # 被禁用（Discovery 仍可、Manifest 可展示、不进 Effective Registry）
     for discovered in assembly.disabled:
@@ -213,14 +258,14 @@ def build_plugin_views(
                 capabilities=manifest.capability_ids(),
                 declared_permissions=list(manifest.permissions),
                 effective_permissions=[],
+                providers=[],
                 availability_reason="已禁用：不参与路由",
                 load_error="",
                 is_builtin=discovered.source == "builtin",
             )
         )
 
-    # 加载失败 / 不兼容（含 Discovery 阶段的 Manifest 校验失败——
-    # 此类失败不进入 all_plugins，需要从 discovery.errors 还原视图）
+    # 加载失败 / 不兼容（Load 阶段）
     for discovered in assembly.discovery.all_plugins:
         manifest = discovered.manifest
         if manifest.id in disabled_ids:
@@ -230,8 +275,7 @@ def build_plugin_views(
             continue
         status = (
             STATUS_INCOMPATIBLE
-            if isinstance(_cause_of(error), PluginCompatibilityError)
-            or "api_version" in error
+            if "api_version" in error
             else STATUS_LOAD_FAILED
         )
         views.append(
@@ -246,6 +290,7 @@ def build_plugin_views(
                 capabilities=manifest.capability_ids(),
                 declared_permissions=list(manifest.permissions),
                 effective_permissions=[],
+                providers=[],
                 availability_reason="加载失败：未进入 Registry",
                 load_error=error,
                 is_builtin=discovered.source == "builtin",
@@ -254,11 +299,6 @@ def build_plugin_views(
 
     # Discovery 阶段失败的插件（Manifest 非法 / api_version 不兼容）：
     # 尽力从原始 JSON 还原展示信息（AC-16：错误可观察，其他插件不受影响）
-    presented_dirs = {
-        str(view.load_error_source)
-        for view in views
-        if getattr(view, "load_error_source", None)
-    }
     for location, error in assembly.discovery.errors:
         raw_info = _read_manifest_info(Path(location))
         if raw_info is None or raw_info.get("id") in {v.plugin_id for v in views}:
@@ -283,6 +323,7 @@ def build_plugin_views(
                 ],
                 declared_permissions=list(raw_info.get("permissions") or []),
                 effective_permissions=[],
+                providers=[],
                 availability_reason="Manifest 校验失败：未进入 Registry",
                 load_error=error,
                 is_builtin=("plugins" in location and "examples" not in location),
@@ -291,11 +332,6 @@ def build_plugin_views(
 
     views.sort(key=lambda view: (not view.is_builtin, view.plugin_id))
     return views
-
-
-def _cause_of(error_text: str):
-    """从装配失败文本还原异常类型（文本协议，保持装配层无状态）。"""
-    return None
 
 
 def _read_manifest_info(manifest_path: Path) -> dict | None:

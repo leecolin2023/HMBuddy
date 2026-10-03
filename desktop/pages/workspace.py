@@ -184,6 +184,13 @@ class WorkspacePage:
         if llm.llm_client is not None:
             status = f"模型：{llm.llm_client.model_name}"
 
+    def _file_dialog_filters(self) -> list[tuple[str, str]]:
+        """INT-009 / AC-I12：File Picker 从 Capability Catalog 动态生成，
+        并保留"所有文件"作为用户显式兜底。"""
+        extensions = sorted(self.controller.app_runtime.catalog.artifact_extensions())
+        patterns = " ".join(f"*{ext}" for ext in extensions) or "*.*"
+        return [("支持的文件", patterns), ("所有文件", "*.*")]
+
     def choose_workspace(self) -> None:
         initial = self.workspace_var.get().strip() or str(Path.cwd())
         selected = filedialog.askdirectory(title="选择 HMBuddy 工作目录", initialdir=initial)
@@ -193,10 +200,7 @@ class WorkspacePage:
     def choose_file(self) -> None:
         selected = filedialog.askopenfilename(
             title="选择办公文件",
-            filetypes=[
-                ("支持的文件", "*.docx *.pdf *.xlsx *.xls *.pptx *.doc *.txt *.md *.csv"),
-                ("所有文件", "*.*"),
-            ],
+            filetypes=self._file_dialog_filters(),
         )
         if not selected:
             return
@@ -335,7 +339,8 @@ class WorkspacePage:
         def done(answer: str) -> None:
             self._set_text(self.answer_text, answer)
             self.status_var.set(f"回答完成：{artifact.name}")
-            self.controller.record_qa(ref, question)
+            # INT-011：Recent Activity 只记录导航入口，不落问题正文
+            self.controller.record_qa(ref)
             self._set_busy(False)
 
         self._background(work, done, "LLM 调用失败")

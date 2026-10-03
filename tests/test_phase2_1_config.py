@@ -38,7 +38,11 @@ def test_t1_load_missing_file_returns_defaults(tmp_path):
     config, errors = load_config(tmp_path / "config.json")
     assert errors == []
     assert config.schema_version == 1
-    assert config.desktop.recent_workspace_limit == 10
+    # INT-003：未设置 = None；默认值在 EffectiveConfig 解析层生效
+    assert config.desktop.recent_workspace_limit is None
+    effective = resolve_effective_config(config)
+    assert effective.recent_workspace_limit.value == 10
+    assert effective.recent_workspace_limit.source is ConfigSource.DEFAULT
 
 
 def test_t1_load_valid_config(tmp_path):
@@ -80,8 +84,10 @@ def test_t1_invalid_fields_reported_and_ignored(tmp_path):
         encoding="utf-8",
     )
     config, errors = load_config(path)
-    assert config.desktop.recent_workspace_limit == 10  # 回落默认
+    assert config.desktop.recent_workspace_limit is None  # 非法值不采纳（未设置）
     assert any("recent_workspace_limit" in item for item in errors)
+    effective = resolve_effective_config(config)
+    assert effective.recent_workspace_limit.value == 10  # Effective 层回落默认
 
 
 def test_t1_atomic_write_and_schema_version(tmp_path):

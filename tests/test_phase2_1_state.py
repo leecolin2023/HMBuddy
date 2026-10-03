@@ -89,10 +89,23 @@ def test_state_unknown_activity_type_ignored(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def test_t3_record_open_deduplicate_and_update():
+def test_t3_record_open_deduplicate_and_update(tmp_path):
+    """平台中立：同一真实路径（尾部斜杠差异）去重。"""
+    base = tmp_path / "ws" / "a"
+    base.mkdir(parents=True)
+    state = AppState()
+    record_workspace_open(state, str(base), limit=10, opened_at=_iso(0))
+    record_workspace_open(state, str(base) + "/", limit=10, opened_at=_iso(100))
+    assert len(state.recent_workspaces) == 1
+    assert state.recent_workspaces[0].last_opened_at == _iso(100)
+
+
+@pytest.mark.windows_only
+def test_t3_windows_case_insensitive_dedupe():
+    """INT-008 / 11.4：Windows 路径大小写不敏感去重——只在 Windows 语义下验证。"""
     state = AppState()
     record_workspace_open(state, "D:/ws/a", limit=10, opened_at=_iso(0))
-    record_workspace_open(state, "D:/ws/A/", limit=10, opened_at=_iso(100))  # 归一去重
+    record_workspace_open(state, "D:/ws/A/", limit=10, opened_at=_iso(100))
     assert len(state.recent_workspaces) == 1
     assert state.recent_workspaces[0].last_opened_at == _iso(100)
 

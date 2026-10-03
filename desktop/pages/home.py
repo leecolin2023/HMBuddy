@@ -116,16 +116,18 @@ class HomePage:
         self._render_status()
 
     def _render_recent(self) -> None:
+        """INT-006：iid 使用稳定 workspace_id，不依赖 list index。"""
+        self.workspaces_by_id = {
+            entry.workspace_id: entry for entry in self.controller.recent_workspaces()
+        }
         for item in self.recent_tree.get_children():
             self.recent_tree.delete(item)
-        from ..controller import AppController  # noqa: F401
-
-        for index, entry in enumerate(self.controller.recent_workspaces()):
+        for entry in self.controller.recent_workspaces():
             missing = not Path(entry.path).is_dir()
             self.recent_tree.insert(
                 "",
                 tk.END,
-                iid=str(index),
+                iid=entry.workspace_id,
                 values=(
                     ("[Missing] " if missing else "") + entry.display_name,
                     entry.path,
@@ -135,6 +137,10 @@ class HomePage:
             )
 
     def _render_activity(self) -> None:
+        """INT-006：iid 使用稳定 entry_id，Tk 自动 iid（I001）不再参与选择映射。"""
+        self.activity_by_id = {
+            entry.entry_id: entry for entry in self.controller.recent_activity()
+        }
         for item in self.activity_tree.get_children():
             self.activity_tree.delete(item)
         type_labels = {"workspace": "工作区", "artifact": "文件", "artifact_qa": "问答"}
@@ -142,6 +148,7 @@ class HomePage:
             self.activity_tree.insert(
                 "",
                 tk.END,
+                iid=entry.entry_id,
                 values=(
                     type_labels.get(entry.activity_type, entry.activity_type),
                     entry.title or entry.artifact_path or entry.workspace_path,
@@ -171,11 +178,15 @@ class HomePage:
         selected = self.recent_tree.selection()
         if not selected:
             return None
-        entries = self.controller.recent_workspaces()
-        try:
-            return entries[int(selected[0])].path
-        except (ValueError, IndexError):
-            return None
+        entry = self.workspaces_by_id.get(selected[0])
+        return entry.path if entry is not None else None
+
+    def _file_dialog_filters(self) -> list[tuple[str, str]]:
+        """INT-009 / AC-I12：File Picker 从 Capability Catalog 动态生成，
+        并保留"所有文件"作为用户显式兜底。"""
+        extensions = sorted(self.controller.app_runtime.catalog.artifact_extensions())
+        patterns = " ".join(f"*{ext}" for ext in extensions) or "*.*"
+        return [("支持的文件", patterns), ("所有文件", "*.*")]
 
     def open_workspace_dialog(self) -> None:
         selected = filedialog.askdirectory(title="选择 HMBuddy 工作目录")
@@ -186,10 +197,7 @@ class HomePage:
     def open_file_dialog(self) -> None:
         selected = filedialog.askopenfilename(
             title="选择办公文件",
-            filetypes=[
-                ("支持的文件", "*.docx *.pdf *.xlsx *.xls *.pptx *.doc *.txt *.md *.csv"),
-                ("所有文件", "*.*"),
-            ],
+            filetypes=self._file_dialog_filters(),
         )
         if not selected:
             return
@@ -259,10 +267,8 @@ class HomePage:
         selected = self.activity_tree.selection()
         if not selected:
             return
-        entries = self.controller.recent_activity()
-        try:
-            entry = entries[int(selected[0])]
-        except (ValueError, IndexError):
+        entry = self.activity_by_id.get(selected[0])
+        if entry is None:
             return
         if entry.workspace_path and Path(entry.workspace_path).is_dir():
             self.controller.open_workspace(entry.workspace_path)

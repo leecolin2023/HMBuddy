@@ -63,3 +63,6 @@ packages = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests", "evals"]
+markers = [
+    "windows_only: 依赖 Windows 平台语义（COM / 路径大小写不敏感），Linux CI 套件明确跳过（INT-008）",
+]

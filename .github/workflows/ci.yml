@@ -1,18 +1,23 @@
 name: CI
 
+# INT-008 平台契约：
+#   HMBuddy V0.x = Windows-first Product, Cross-platform Core where applicable。
+#   - Windows 套件跑全量（含 .doc COM 契约、路径大小写语义、桌面冒烟）；
+#   - Linux 套件跑跨平台核心（Artifact/Plugin Runtime/Config/State/Controller），
+#     Windows-only 测试通过 skipif / windows_only 标记显式跳过，不迁就、不静默。
+
 on:
   push:
     branches: [main]
   pull_request:
 
 jobs:
-  test:
-    name: pytest (${{ matrix.os }}, py${{ matrix.python-version }})
-    runs-on: ${{ matrix.os }}
+  test-windows-full:
+    name: windows full suite (py${{ matrix.python-version }})
+    runs-on: windows-latest
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, ubuntu-latest]
         python-version: ["3.10", "3.12"]
     steps:
       - uses: actions/checkout@v4
@@ -21,8 +26,26 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - name: Install (source tree)
         run: pip install -e ".[dev]"
-      - name: Run tests
+      - name: Run full test suite
         run: python -m pytest -q
+
+  test-linux-cross-platform-core:
+    name: linux cross-platform core suite (py${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install (source tree)
+        run: pip install -e ".[dev]"
+      - name: Run cross-platform core suite
+        # Windows-only 测试由 skipif / windows_only 标记显式跳过（规格 11.3/11.4）
+        run: python -m pytest -q -m "not windows_only"
 
   install-smoke:
     name: wheel install smoke

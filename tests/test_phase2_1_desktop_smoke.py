@@ -197,7 +197,7 @@ def test_t8_recent_activity_records_navigation(app_env):
     controller.open_workspace(FIXTURES_DIR)
     ref = next(r for r in controller.refs if r.name == "sample.docx")
     controller.open_artifact(ref)
-    controller.record_qa(ref, "这份文档讲了什么？")
+    controller.record_qa(ref)
 
     entries = controller.recent_activity()
     assert entries[0].activity_type == "artifact_qa"

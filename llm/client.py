@@ -57,7 +57,11 @@ class OpenAICompatibleClient(BaseLLMClient):
         api_key: str,
         model: str,
         timeout: int = DEFAULT_TIMEOUT_SECONDS,
+        context_policy: ContextPolicy | None = None,
     ):
+        # INT-002：必须初始化 Base（context_policy / 默认预算），
+        # 否则真实 ask() 路径会 AttributeError；Context Budget 逻辑只在 Base 一份。
+        super().__init__(context_policy=context_policy)
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
         self.model = model

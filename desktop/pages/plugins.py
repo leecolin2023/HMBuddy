@@ -115,9 +115,20 @@ class PluginsPage:
         if view is None:
             return
         detail = f"{view.name}（{view.plugin_id}）v{view.version} · API v{view.api_version} · 来源 {view.source}"
+        if view.providers:
+            # INT-010：Provider 明细放详情区域
+            provider_lines = [
+                f"  · {item.provider_id}（{', '.join(item.capabilities)}，"
+                f"priority={item.priority}，"
+                f"{'可用' if item.available else '不可用：' + item.availability_reason}）"
+                for item in view.providers
+            ]
+            detail += "\nProviders（" + str(len(view.providers)) + "）：\n" + "\n".join(
+                provider_lines
+            )
         if view.load_error:
             detail += f"\n加载错误：{view.load_error}"
-        if view.availability_reason:
+        if view.availability_reason and view.status != "Disabled":
             detail += f"\n可用性：{view.availability_reason}"
         self.detail_var.set(detail)
 

@@ -62,9 +62,11 @@ class PluginsConfig:
 
 @dataclass
 class DesktopConfig:
-    restore_last_workspace: bool = True
-    recent_workspace_limit: int = 10
-    recent_activity_limit: int = 20
+    """INT-003：None = 用户未设置（回落 Default）；False / 0 是合法显式配置。"""
+
+    restore_last_workspace: bool | None = None
+    recent_workspace_limit: int | None = None
+    recent_activity_limit: int | None = None
 
 
 @dataclass
@@ -178,19 +180,35 @@ def _parse_config(data: Any, errors: list[str]) -> AppConfig:
 
     desktop = data.get("desktop") or {}
     if isinstance(desktop, dict):
-        config.desktop.restore_last_workspace = bool(
-            desktop.get("restore_last_workspace", True)
-        )
-        limit = desktop.get("recent_workspace_limit", 10)
-        if isinstance(limit, int) and limit >= 0:
-            config.desktop.recent_workspace_limit = limit
-        else:
-            errors.append("desktop.recent_workspace_limit 必须是非负整数")
-        activity_limit = desktop.get("recent_activity_limit", 20)
-        if isinstance(activity_limit, int) and activity_limit >= 0:
-            config.desktop.recent_activity_limit = activity_limit
-        else:
-            errors.append("desktop.recent_activity_limit 必须是非负整数")
+        # INT-003：区分"未设置"（None/缺省 → Default）与显式 False / 0（User Config）
+        if "restore_last_workspace" in desktop:
+            value = desktop.get("restore_last_workspace")
+            if value is None:
+                pass  # 未设置：保留 None，解析层回落默认
+            elif isinstance(value, bool):
+                config.desktop.restore_last_workspace = value
+            else:
+                errors.append("desktop.restore_last_workspace 必须是布尔值")
+        if "recent_workspace_limit" in desktop:
+            limit = desktop.get("recent_workspace_limit")
+            if limit is None:
+                pass
+            elif isinstance(limit, int) and not isinstance(limit, bool) and limit >= 0:
+                config.desktop.recent_workspace_limit = limit
+            else:
+                errors.append("desktop.recent_workspace_limit 必须是非负整数")
+        if "recent_activity_limit" in desktop:
+            activity_limit = desktop.get("recent_activity_limit")
+            if activity_limit is None:
+                pass
+            elif (
+                isinstance(activity_limit, int)
+                and not isinstance(activity_limit, bool)
+                and activity_limit >= 0
+            ):
+                config.desktop.recent_activity_limit = activity_limit
+            else:
+                errors.append("desktop.recent_activity_limit 必须是非负整数")
 
     errors.extend(validate_config(config))
     return config
@@ -225,10 +243,17 @@ def validate_config(config: AppConfig) -> list[str]:
     for plugin_id in config.plugins.disabled_plugin_ids:
         if not plugin_id.strip():
             errors.append("disabled_plugin_ids 含空字符串")
-    if config.desktop.recent_workspace_limit < 0:
-        errors.append("recent_workspace_limit 不能为负")
-    if config.desktop.recent_activity_limit < 0:
-        errors.append("recent_activity_limit 不能为负")
+    desktop = config.desktop
+    if desktop.restore_last_workspace is not None and not isinstance(
+        desktop.restore_last_workspace, bool
+    ):
+        errors.append("restore_last_workspace 必须是布尔值或未设置")
+    for name, value in (
+        ("recent_workspace_limit", desktop.recent_workspace_limit),
+        ("recent_activity_limit", desktop.recent_activity_limit),
+    ):
+        if value is not None and (not isinstance(value, int) or isinstance(value, bool) or value < 0):
+            errors.append(f"{name} 必须是非负整数或未设置")
     return errors
 
 
@@ -301,12 +326,15 @@ def resolve_effective_config(
     """按 Default < User Config < Environment < Runtime Argument 解析生效配置。
 
     runtime_overrides 仅用于显式调用方（测试 / CLI），Desktop UI 不使用。
+
+    INT-003：字符串用"非空即已设置"；布尔/整数用 None 哨兵区分
+    "未设置"与显式 False / 0——不用 truthy 判断。
     """
     env = os.environ if env is None else env
     user = user_config or AppConfig()
     runtime_overrides = dict(runtime_overrides or {})
 
-    def _resolve(field_name: str, user_value, env_names: str | tuple | None, parse=str):
+    def _resolve_env(field_name: str, env_names: str | tuple | None, parse=str):
         runtime_value = runtime_overrides.get(field_name)
         if runtime_value is not None:
             return EffectiveValue(runtime_value, ConfigSource.RUNTIME)
@@ -320,15 +348,44 @@ def resolve_effective_config(
                     return EffectiveValue(
                         parse(env_value), ConfigSource.ENVIRONMENT, detail=env_name
                     )
-        # user config 中非空即视为用户设置；空值回落 Default
+        return None
+
+    def _resolve_string(field_name, user_value, env_names, parse=str):
+        resolved = _resolve_env(field_name, env_names, parse)
+        if resolved is not None:
+            return resolved
         if user_value:
             return EffectiveValue(user_value, ConfigSource.USER)
         return EffectiveValue(parse(), ConfigSource.DEFAULT)
 
-    llm_base_url = _resolve("llm_base_url", user.llm.base_url, ENV_LLM_BASE_URL)
-    llm_model = _resolve("llm_model", user.llm.model, ENV_LLM_MODEL)
-    api_key_env = _resolve("api_key_env", user.llm.api_key_env, None)
-    model_dir = _resolve(
+    def _resolve_bool(field_name, user_value, default: bool):
+        runtime_value = runtime_overrides.get(field_name)
+        if runtime_value is not None:
+            return EffectiveValue(runtime_value, ConfigSource.RUNTIME)
+        if user_value is not None:  # INT-003：显式 False 也是 User Config
+            return EffectiveValue(bool(user_value), ConfigSource.USER)
+        return EffectiveValue(default, ConfigSource.DEFAULT)
+
+    def _resolve_int(field_name, user_value, default: int):
+        runtime_value = runtime_overrides.get(field_name)
+        if runtime_value is not None:
+            return EffectiveValue(runtime_value, ConfigSource.RUNTIME)
+        if user_value is not None:  # INT-003：显式 0 也是 User Config
+            return EffectiveValue(int(user_value), ConfigSource.USER)
+        return EffectiveValue(default, ConfigSource.DEFAULT)
+
+    def _resolve_string_list(field_name, user_value):
+        runtime_value = runtime_overrides.get(field_name)
+        if runtime_value is not None:
+            return EffectiveValue(list(runtime_value), ConfigSource.RUNTIME)
+        if user_value:
+            return EffectiveValue(list(user_value), ConfigSource.USER)
+        return EffectiveValue([], ConfigSource.DEFAULT)
+
+    llm_base_url = _resolve_string("llm_base_url", user.llm.base_url, ENV_LLM_BASE_URL)
+    llm_model = _resolve_string("llm_model", user.llm.model, ENV_LLM_MODEL)
+    api_key_env = _resolve_string("api_key_env", user.llm.api_key_env, None)
+    model_dir = _resolve_string(
         "model_dir",
         user.paths.model_dir,
         (ENV_MODEL_DIR, LEGACY_ENV_MODEL_DIR),
@@ -358,29 +415,17 @@ def resolve_effective_config(
     for item in runtime_overrides.get("external_plugin_dirs", []) or []:
         _add_dir(item, ConfigSource.RUNTIME)
 
-    disabled = _resolve(
-        "disabled_plugin_ids",
-        user.plugins.disabled_plugin_ids,
-        None,
-        parse=lambda: [],
+    disabled = _resolve_string_list(
+        "disabled_plugin_ids", user.plugins.disabled_plugin_ids
     )
-    restore = _resolve(
-        "restore_last_workspace",
-        user.desktop.restore_last_workspace,
-        None,
-        parse=lambda: True,
+    restore = _resolve_bool(
+        "restore_last_workspace", user.desktop.restore_last_workspace, default=True
     )
-    ws_limit = _resolve(
-        "recent_workspace_limit",
-        user.desktop.recent_workspace_limit,
-        None,
-        parse=lambda: 10,
+    ws_limit = _resolve_int(
+        "recent_workspace_limit", user.desktop.recent_workspace_limit, default=10
     )
-    activity_limit = _resolve(
-        "recent_activity_limit",
-        user.desktop.recent_activity_limit,
-        None,
-        parse=lambda: 20,
+    activity_limit = _resolve_int(
+        "recent_activity_limit", user.desktop.recent_activity_limit, default=20
     )
 
     llm_configured = bool(

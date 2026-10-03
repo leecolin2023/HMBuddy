@@ -1,7 +1,7 @@
 # HMBuddy 架构设计总纲 — WorkBuddy-like Product on a Pi-like Minimal Harness
 
 **文档性质：** Canonical Architecture Baseline / 架构原文档  
-**文档版本：** V0.1  
+**文档版本：** V0.2  
 **状态：** Active  
 **适用范围：** HMBuddy 后续所有产品设计、需求规格说明书、实现方案、重构与评审  
 **首次形成基线：** 2026-10-02  
@@ -1365,23 +1365,25 @@ Background task execution
 
 ## Phase 2.1
 
-当前为需求阶段。
+**已完成**（V0.2 起为真实实现状态）。
 
-目标：
+已交付：
 
 ~~~text
 Home
-Config
-State
+Config（AppConfig / EffectiveConfig）
+State（AppState）
 Recent Workspace
-Recent Task
+Recent Activity（不建立 Task 域）
 Plugin Manager
 Settings
+Desktop Shell 四页导航
 ~~~
 
-实施时应遵守本文档：
+实施约束已验证：
 
-> Recent Task 不演变成重型 Task Engine，而作为未来 Session 的产品入口。
+> Recent Activity 只做 UI 导航历史，不演变成 Task Engine；
+> 未来 Minimal Agent Kernel 建立 Session 后，Agent 相关入口迁移为 Session Index（Product Task = Session + metadata）。
 
 ---
 
@@ -1393,21 +1395,23 @@ Settings
 
 ## Stage A — Desktop Application Foundation
 
-实施当前 Phase 2.1：
+**已完成**（Phase 2.1 + Phase 2.1.1 Integration Hardening）。
+
+已交付：
 
 ~~~text
 Config
 App State
 Home
 Recent Workspace
-Recent Task
+Recent Activity
 Plugin Manager
 Settings
 ~~~
 
-目标：
+目标达成：
 
-> HMBuddy 先成为可持续使用的桌面应用。
+> HMBuddy 已成为可持续使用、可配置、可恢复基本工作上下文的本地桌面应用（仍非 Agent Runtime）。
 
 ---
 
@@ -1920,3 +1924,17 @@ HMBuddy 的长期架构定义为：
 11. Artifact 写能力采用 Patch / Version / Diff 路线；
 12. 后续需求规格说明书必须增加 Architecture Alignment；
 13. 架构文档采用单一 Canonical 文件持续迭代，重大变更通过版本与 ADR 管理。
+
+---
+
+# 33. V0.2 Change Log
+
+## V0.2 — 2026-10-02
+
+Compatible Evolution / Clarification（Phase 2.1.1 完成后同步真实项目状态）。
+
+更新：
+
+1. **Current State**：Phase 2.1 由"需求阶段"更新为"已完成"；Recent Task 表述统一为 Recent Activity（产品上从未建立 Task 域）。
+2. **Roadmap**：Stage A（Desktop Application Foundation）标记为已完成；下一阶段为 Minimal Agent Kernel。
+3. **Phase 2.1.1**：记录 Desktop & Runtime Integration Hardening 已完成——Catalog/Config/Workspace 身份/Plugin 状态/LLM ContextPolicy 集成缝隙收口，六个 Kernel Primitive 不变。
