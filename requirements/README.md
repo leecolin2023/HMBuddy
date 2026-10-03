@@ -19,6 +19,12 @@ V1.0 自 2026-10-03 起生效，并正式取代 V0.2。
 - **Migration by Capability**：旧实现不整体搬迁，只迁移重新证明有价值的领域能力；
 - **Upgradeability First**：持续跟进 Pi 是正式架构能力。
 
+## VNext Specifications
+
+- [VNext-01 — Pi-native Bootstrap & Office Integration Spike V0.1](./vnext-01-pi-native-bootstrap-integration-spike-v0.1.md)
+
+当前 VNext 只验证最小纵向链：Pi AgentSession → HMBuddy Extension / Tool → Python Office Bridge → DOCX → Pi final answer。VNext-01 完成前，不进入 Office Read Pack、写回、GUI 或银行业务 Skill 扩展。
+
 ## Legacy Architecture
 
 - [V0.2 — WorkBuddy-like Product on a Pi-like Minimal Harness](./legacy/hmbuddy-architecture-baseline-v0.2.md)
