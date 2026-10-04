@@ -162,15 +162,15 @@ D、R、L、P 可以长度完全不同。
 
 ---
 
-# 6. D — Deep Read：Narrative Spine + Mechanism Depth
+# 6. D — Deep Read：Narrative Spine + Progressive Disclosure + Mechanism Depth
 
 D 的任务不是“把源码讲一遍”，而是：
 
-> **让一个没读过源码的人沿着一条因果主线，理解一个设计为什么一步步长成现在这样；同时，对主线中每一个关键机制都下钻到接近需求规格说明书的粒度。**
+> **让一个没读过源码的人沿着一条因果主线，理解一个设计为什么一步步长成现在这样；同时，每一步只引出解决当前问题所必需的最小机制，并把这个机制下钻到接近需求规格说明书的粒度。**
 
-Deep Read 同时沿两条轴工作。
+Deep Read 同时受三条规则约束：
 
-~~~text
+```text
 横轴：Narrative Spine
 
 问题
@@ -180,9 +180,19 @@ Deep Read 同时沿两条轴工作。
 → 新问题
 → 新机制
 → 最终架构自然出现
-~~~
+```
 
-~~~text
+```text
+时序：Progressive Disclosure
+
+当前问题
+→ 只引出解决当前问题的最小机制
+→ 先把它讲清
+→ 再暴露它留下的新问题
+→ 后续机制才允许登场
+```
+
+```text
 纵轴：Mechanism Depth
 
 为什么存在
@@ -194,21 +204,25 @@ Deep Read 同时沿两条轴工作。
 → 与谁协作
 → 失败或缺失会怎样
 → 真实源码 / test 锚点
-~~~
+```
 
-两条轴缺一不可。
+三者缺一不可。
 
-只有横轴，没有纵深，会变成“故事讲得顺，但每个机制只是点名”。
+只有 Narrative Spine，没有 Mechanism Depth，会变成“故事讲得顺，但每个机制只是点名”。
 
-只有纵深，没有横轴，会退化成“API 手册 / 类说明书”。
+只有 Mechanism Depth，没有 Narrative Spine，会退化成 API 手册。
+
+有 Narrative Spine 和 Mechanism Depth，但没有 Progressive Disclosure，则会出现另一种失败：
+
+> 当前问题还没有讲清，就提前泄露 AgentLoop、Session、Retry、Policy 等后续概念，导致读者需要同时记住多层尚未建立的抽象。
 
 ## A. Narrative Spine：章节顺序必须由问题推动
 
 正文不能优先按源码目录、类定义、方法列表或 API 顺序展开。
 
-必须先恢复一条认知因果链：
+必须恢复一条认知因果链：
 
-~~~text
+```text
 原始矛盾是什么？
 ↓
 最简单的方案能解决什么？
@@ -217,10 +231,10 @@ Deep Read 同时沿两条轴工作。
 ↓
 哪个机制因此必须出现？
 ↓
-这个机制又制造或暴露了什么新问题？
+这个机制又暴露了什么新问题？
 ↓
 下一个机制为什么自然出现？
-~~~
+```
 
 章节之间必须能够回答：
 
@@ -234,32 +248,115 @@ Deep Read 同时沿两条轴工作。
 
 不要先写：
 
-~~~text
+```text
 AgentSession 是……
 SessionManager 是……
 Compaction 是……
-~~~
+```
 
-而应先让读者看见：
+而应先让读者看见具体矛盾，再让机制登场。
 
-~~~text
-一次 Agent run 已经能 Tool Calling，
-但用户第二轮继续追问时，历史由谁负责？
+## C. Progressive Disclosure Gate：一次只引出一个认知层
 
-历史越来越长后，模型上下文装不下怎么办？
+每一个“新问题”只能引出解决该问题所必需的最小机制。
 
-Agent 正在执行工具时，用户又输入新要求怎么办？
+例如当前问题只是：
 
-一次 provider 请求失败，整段工作是否必须结束？
-~~~
+> 模型已经输出 `read_office_file(path=...)`，怎样真正执行？
 
-然后机制才有出场理由。
+这一阶段可以引出：
 
-## C. Mechanism Depth：禁止“裸机制名”
+```text
+Tool lookup
+参数校验
+执行前 policy
+Tool execute
+结果规范化
+```
+
+因为它们都属于“把 Action Intent 变成一次受控执行”。
+
+但此时**不应该提前引出**：
+
+```text
+AgentLoop
+AgentSession
+Compaction
+Retry
+```
+
+这些必须等到新的问题真正出现，例如：
+
+```text
+Tool Result 已经拿到了，为什么还不能结束？
+↓
+Observation
+
+Observation 已经回来了，谁负责再跑一轮？
+↓
+AgentLoop
+
+一次 AgentLoop 能工作，但长期会话怎么办？
+↓
+AgentSession / SessionManager
+```
+
+### C.1 不允许用未来概念解释当前概念
+
+如果一个概念在叙事上尚未被推导出来，就不能把它当成当前解释的前提。
+
+不推荐：
+
+```text
+真实 AgentLoop 会先验证 Tool……
+```
+
+如果读者此时尚不知道为什么需要 AgentLoop。
+
+更好的写法：
+
+```text
+程序现在需要一个受控执行层：
+先找到 Tool，再校验参数，再决定是否允许执行。
+在 Pi 当前实现中，这些逻辑位于 agent-loop.ts 的 Tool execution 路径。
+```
+
+先建立机制，再映射源码归属。
+
+### C.2 Source Location 不等于 Cognitive Order
+
+多个机制可以恰好写在同一个源码文件里，但不代表它们应在文章里同时登场。
+
+例如 `agent-loop.ts` 同时包含：
+
+- Tool preparation；
+- Tool execution；
+- Tool Result creation；
+- loop continuation。
+
+正文仍应按认知顺序拆开：
+
+```text
+先理解一次 Tool 怎样执行
+↓
+再理解 Result 为什么回模型
+↓
+最后理解为什么形成 Loop
+```
+
+代码模块边界不能覆盖认知边界。
+
+### C.3 每一节结尾必须显式留下“唯一下一问”
+
+每一主要章节结束时，至少要有一个自然的未解决问题，把读者带入下一章。
+
+如果一节结尾同时抛出三到五个跨层问题，说明 Progressive Disclosure 失败。
+
+## D. Mechanism Depth：禁止“裸机制名”
 
 只要一个概念或机制对主线成立是必要的，就不能只出现名字或一句定义。
 
-内部调查至少必须覆盖以下九个维度：
+内部调查至少覆盖：
 
 | 维度 | 必须弄清 |
 |---|---|
@@ -273,95 +370,90 @@ Agent 正在执行工具时，用户又输入新要求怎么办？
 | Failure / Boundary | 没有它、失败或越界时会怎样 |
 | Source Anchor | 源码 / checked test / docs 在哪里 |
 
-这是**作者内部调查清单，不是固定正文模板**。
+这是作者内部调查清单，不是固定正文模板。
 
-最终文章仍然按 Narrative Spine 自然叙述，不要求每个机制机械出现九个小标题。
+最终文章仍然按 Narrative Spine 自然叙述。
 
-## D. 需求规格说明书级粒度
+## E. 需求规格说明书级粒度
 
-“讲清一个机制”至少应达到这样的粒度：
+“讲清一个机制”至少应达到：
 
-~~~text
-为什么需要 Queue
+```text
+为什么需要
 ↓
-Pi 区分 steer / followUp
+何时进入
 ↓
-两者各自在什么时点被消费
+输入是什么
 ↓
-消息进入哪个内部队列 / Agent queue
+内部状态如何变化
 ↓
-queue_update 暴露什么状态
+输出是什么
 ↓
-它如何改变下一次 LLM request 的输入
+上下游如何配合
 ↓
-如果没有区分会出现什么交互问题
+失败会怎样
 ↓
-对应源码与 test 在哪里
-~~~
+源码 / test 在哪里
+```
 
 而不是：
 
-~~~text
+```text
 AgentSession 还负责 queue、compaction、retry。
-~~~
+```
 
-同样，SessionManager 至少要说明：
+## F. Locate real entry point，但不要让入口支配叙事
 
-- append-only tree 是什么；
-- leaf / branch 如何表示当前路径；
-- buildSessionProjection / buildSessionContext 解决什么；
-- compaction entry 如何改变模型可见 context；
-- inMemory 与持久化只改变存储，不改变 Session authority。
+必须找到真实入口，例如：
 
-## E. Locate real entry point，但不要让入口支配叙事
+```text
+createAgentSession()
+session.prompt()
+pi.registerTool()
+SessionManager.buildSessionContext()
+runLoop()
+```
 
-必须找到真实入口，例如 createAgentSession()、session.prompt()、pi.registerTool()、SessionManager.buildSessionContext()、AgentLoop.runLoop()。
+但入口只是证据锚点，不是章节排序原则。
 
-但入口是**证据锚点**，不是章节排序原则。
+## G. Trace one real call chain
 
-可以先从问题讲起，等机制自然出现时再落到源码。
+至少跟踪一条具体输入，但仍然服从 Progressive Disclosure。
 
-## F. Trace one real call chain
+第一次出现某一步时，只展开当前已建立的概念；不能在第一遍调用链里提前塞满所有未来术语。
 
-至少跟踪一条具体输入：
+完整链最终应覆盖：
 
-~~~text
-用户输入什么
-↓
-当前 Session / Context 是什么
-↓
-模型看见哪些 Tool declaration
-↓
-模型返回什么 toolCall
-↓
-runtime 如何验证、阻断或执行
-↓
-Tool Result 如何进入消息与 Session
-↓
-为什么下一轮模型会发生
-↓
-何时 AgentLoop 结束
-↓
-为什么 AgentSession 还可能继续 retry / queue / compaction
-↓
-何时真正 agent_settled
-~~~
+```text
+用户目标
+→ Tool declaration
+→ Tool Call
+→ Tool lookup / validation / permission / execute
+→ Tool Result
+→ Result reinjection
+→ next model request
+→ AgentLoop stop
+→ Session-level continuation / recovery
+→ agent_settled
+```
 
-不能在关键中间层直接用“Pi 处理”“系统继续”“Session 管理”跳过去。
+## H. Preserve cognitive engines
 
-## G. Preserve cognitive engines
-
-必须保留真正承担理解功能的关键代码、真实对象、数据形态、状态变化、对比、失败例子、调用关系、checked test、有证据的历史演变和必要解释冗余。
+必须保留关键代码、真实对象、数据形态、状态变化、对比、失败例子、调用关系、checked test、有证据的历史演变和必要解释冗余。
 
 Deep Read 可以删除语言重复，但不能删除“为什么下一步成立”的桥梁。
 
-## H. Explain choices carefully
+## I. Explain choices carefully
 
-源码 / docs / changelog 有证据时可以说明设计原因。只有推断时，必须明确写“从当前实现可以推断……”。
+源码 / docs / changelog 有证据时可以说明设计原因。
 
-## I. Abstract last
+只有推断时，必须明确写：
 
-只有具体问题、运行路径、关键机制都已经看懂后，才形成概念定义、ownership、不变量、边界和可迁移 mental model。
+> 从当前实现可以推断……
+
+## J. Abstract last
+
+只有具体问题、运行路径、关键机制都已经看懂后，才形成概念定义、ownership、不变量、边界和 mental model。
 
 抽象是已理解事实的压缩，不是解释的起点。
 
@@ -369,7 +461,7 @@ Deep Read 可以删除语言重复，但不能删除“为什么下一步成立�
 
 # 7. D Acceptance Gate
 
-D 只有同时通过 Narrative Gate 与 Mechanism Depth Gate 才完成。
+D 只有同时通过 Narrative、Progressive Disclosure、Mechanism Depth 三类 Gate 才完成。
 
 ## 7.1 Narrative Gate
 
@@ -377,13 +469,24 @@ D 只有同时通过 Narrative Gate 与 Mechanism Depth Gate 才完成。
 
 1. 文章最开始的原始矛盾是什么？
 2. 每个主要机制为什么在那个位置出现？
-3. 上一节留下了什么未解决问题，逼出了下一节？
+3. 上一节留下了什么问题，逼出了下一节？
 4. 如果交换两个主要章节，因果链是否会断？
-5. 最终架构是否像“被问题一步步推导出来”，而不是作者一次性宣布？
+5. 最终架构是否像被问题一步步推导出来，而不是作者一次性宣布？
 
-任何一章无法回答“为什么现在讲它”，Narrative Gate 失败。
+## 7.2 Progressive Disclosure Gate
 
-## 7.2 Mechanism Depth Gate
+逐节检查：
+
+1. 当前章节到底只解决哪个问题？
+2. 本节引入的每个新概念是否都是解决当前问题所必需？
+3. 是否提前使用了尚未推导出来的概念解释当前机制？
+4. 是否因为源码同文件，就把多个认知层一起讲了？
+5. 本节结尾是否留下一个清楚、自然的“下一问”？
+6. 如果删除提前泄露的后续术语，当前章节是否仍能完整成立？
+
+如果读者需要先理解后面三章，才能理解当前章节，Progressive Disclosure Gate 失败。
+
+## 7.3 Mechanism Depth Gate
 
 对正文中每一个关键机制，陌生读者至少应能说明：
 
@@ -394,21 +497,21 @@ D 只有同时通过 Narrative Gate 与 Mechanism Depth Gate 才完成。
 5. 它改变或维护什么状态？
 6. 它向后续输出什么？
 7. 它与上下游分别怎么协作？
-8. 没有它或它失败时，具体会坏在哪里？
-9. 真实源码 / test / docs 的锚点在哪里？
+8. 没有它或失败时具体会坏在哪里？
+9. 真实源码 / test / docs 锚点在哪里？
 
-如果正文出现 SessionManager、queue、compaction、retry、extension lifecycle 等关键机制，但读者只能知道“有这些模块”，不能回答以上问题，就视为**裸机制名**，D 未完成。
+如果正文只留下机制名，D 未完成。
 
-## 7.3 Whole-article Gate
+## 7.4 Whole-article Gate
 
-此外，读者还应能：
+读者还应能：
 
-- 跟踪一个具体输入走完主要调用链；
-- 指出关键状态在哪里改变；
-- 区分相邻概念的职责边界；
+- 跟踪具体输入走完主要调用链；
+- 指出关键状态在哪里变化；
+- 区分相邻概念；
 - 区分 Source fact / Derived explanation / HMBuddy decision；
-- 把概念名遮掉后，仍能用自己的话解释它解决什么问题；
-- 在不重新读源码的情况下，对一个相邻变化做出有依据的预测。
+- 对相邻条件变化做出有依据的预测；
+- 在读完整篇后，能够反向解释“为什么 Pi 最终需要这些层”，而不是只能背模块名称。
 
 任何关键步骤仍需读者自行脑补，D 继续展开。
 
