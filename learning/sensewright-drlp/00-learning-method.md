@@ -162,89 +162,88 @@ D、R、L、P 可以长度完全不同。
 
 ---
 
-# 6. D — Deep Read：Narrative Spine + Progressive Disclosure + Mechanism Depth
+# 6. D — Deep Read：Narrative Spine + Progressive Disclosure + Mechanism Depth + Cognitive Continuity
 
 D 的任务不是“把源码讲一遍”，而是：
 
-> **让一个没读过源码的人沿着一条因果主线，理解一个设计为什么一步步长成现在这样；同时，每一步只引出解决当前问题所必需的最小机制，并把这个机制下钻到接近需求规格说明书的粒度。**
+> **让一个没读过源码的人沿一条因果主线理解系统为什么一步步长成现在这样；每一步只引出解决当前问题所必需的最小机制；每个机制下钻到接近需求规格说明书的粒度；同时在长篇阅读中保持术语、已知前提和抽象层级的连续性。**
 
-Deep Read 同时受三条规则约束：
+Deep Read 同时受四条规则约束。
 
 ```text
-横轴：Narrative Spine
-
+1. Narrative Spine
 问题
-→ 第一个最小解决
-→ 新问题
-→ 新机制
+→ 最小解决
 → 新问题
 → 新机制
 → 最终架构自然出现
 ```
 
 ```text
-时序：Progressive Disclosure
-
+2. Progressive Disclosure
 当前问题
-→ 只引出解决当前问题的最小机制
-→ 先把它讲清
-→ 再暴露它留下的新问题
-→ 后续机制才允许登场
+→ 只引出当前必需机制
+→ 先讲清
+→ 再暴露下一问题
+→ 后续概念才允许登场
 ```
 
 ```text
-纵轴：Mechanism Depth
-
+3. Mechanism Depth
 为什么存在
-→ 什么时候触发
-→ 接收什么
-→ 内部负责什么
-→ 改变什么状态
-→ 产出什么
-→ 与谁协作
-→ 失败或缺失会怎样
-→ 真实源码 / test 锚点
+→ Trigger
+→ Input
+→ Responsibility
+→ State
+→ Output
+→ Collaboration
+→ Failure / Boundary
+→ Source Anchor
 ```
 
-三者缺一不可。
+```text
+4. Cognitive Continuity
+当前读者已经知道什么
+→ Canonical Term 是什么
+→ 距离上次出现是否过远
+→ 是否需要 Re-entry Bridge
+→ 是否发生 Pi→HMBuddy / Abstract→Concrete 等层级切换
+→ 是否需要 Transition Bridge
+```
 
-只有 Narrative Spine，没有 Mechanism Depth，会变成“故事讲得顺，但每个机制只是点名”。
+四者缺一不可。
 
-只有 Mechanism Depth，没有 Narrative Spine，会退化成 API 手册。
-
-有 Narrative Spine 和 Mechanism Depth，但没有 Progressive Disclosure，则会出现另一种失败：
-
-> 当前问题还没有讲清，就提前泄露 AgentLoop、Session、Retry、Policy 等后续概念，导致读者需要同时记住多层尚未建立的抽象。
+---
 
 ## A. Narrative Spine：章节顺序必须由问题推动
 
 正文不能优先按源码目录、类定义、方法列表或 API 顺序展开。
 
-必须恢复一条认知因果链：
+必须恢复一条因果链：
 
 ```text
 原始矛盾是什么？
 ↓
-最简单的方案能解决什么？
+最简单方案解决了什么？
 ↓
 它留下了什么新问题？
 ↓
 哪个机制因此必须出现？
 ↓
-这个机制又暴露了什么新问题？
-↓
-下一个机制为什么自然出现？
+这个机制解决后，又留下什么问题？
 ```
 
-章节之间必须能够回答：
+每一主要章节都必须回答：
 
 > **为什么读者此刻必须进入下一章？**
 
 如果下一章只是因为“源码里下一个文件叫这个名字”，Narrative Gate 失败。
 
+---
+
 ## B. Problem before abstraction
 
-第一次出现一个概念时，先解释它被什么问题逼出来。
+第一次出现一个概念时，先让读者看见具体矛盾，再给概念命名。
 
 不要先写：
 
@@ -254,17 +253,29 @@ SessionManager 是……
 Compaction 是……
 ```
 
-而应先让读者看见具体矛盾，再让机制登场。
+而应先写出：
+
+```text
+一次 run 已经能 Tool Calling，
+但第二轮继续追问时，上一轮状态由谁负责？
+
+完整工作历史越来越长，
+模型 Context 装不下怎么办？
+```
+
+机制应该是问题逼出来的结果。
+
+---
 
 ## C. Progressive Disclosure Gate：一次只引出一个认知层
 
-每一个“新问题”只能引出解决该问题所必需的最小机制。
+每个“新问题”只能引出解决该问题所必需的最小机制。
 
 例如当前问题只是：
 
 > 模型已经输出 `read_office_file(path=...)`，怎样真正执行？
 
-这一阶段可以引出：
+此时可以引出：
 
 ```text
 Tool lookup
@@ -274,9 +285,7 @@ Tool execute
 结果规范化
 ```
 
-因为它们都属于“把 Action Intent 变成一次受控执行”。
-
-但此时**不应该提前引出**：
+但不能提前引出：
 
 ```text
 AgentLoop
@@ -285,107 +294,225 @@ Compaction
 Retry
 ```
 
-这些必须等到新的问题真正出现，例如：
-
-```text
-Tool Result 已经拿到了，为什么还不能结束？
-↓
-Observation
-
-Observation 已经回来了，谁负责再跑一轮？
-↓
-AgentLoop
-
-一次 AgentLoop 能工作，但长期会话怎么办？
-↓
-AgentSession / SessionManager
-```
+这些必须等后续问题自然出现。
 
 ### C.1 不允许用未来概念解释当前概念
 
-如果一个概念在叙事上尚未被推导出来，就不能把它当成当前解释的前提。
-
-不推荐：
-
-```text
-真实 AgentLoop 会先验证 Tool……
-```
-
-如果读者此时尚不知道为什么需要 AgentLoop。
-
-更好的写法：
-
-```text
-程序现在需要一个受控执行层：
-先找到 Tool，再校验参数，再决定是否允许执行。
-在 Pi 当前实现中，这些逻辑位于 agent-loop.ts 的 Tool execution 路径。
-```
-
-先建立机制，再映射源码归属。
+如果一个概念还没有被推导出来，不能把它当当前解释的前提。
 
 ### C.2 Source Location 不等于 Cognitive Order
 
-多个机制可以恰好写在同一个源码文件里，但不代表它们应在文章里同时登场。
+多个机制写在同一源码文件，不代表文章里应该同时讲。
 
-例如 `agent-loop.ts` 同时包含：
+例如 `agent-loop.ts` 中同时有：
 
 - Tool preparation；
 - Tool execution；
 - Tool Result creation；
 - loop continuation。
 
-正文仍应按认知顺序拆开：
+正文仍应按：
 
 ```text
-先理解一次 Tool 怎样执行
+一次 Tool 怎样执行
 ↓
-再理解 Result 为什么回模型
+Result 为什么回模型
 ↓
-最后理解为什么形成 Loop
+为什么形成 Loop
 ```
 
-代码模块边界不能覆盖认知边界。
+逐层展开。
 
-### C.3 每一节结尾必须显式留下“唯一下一问”
+### C.3 每节结尾只留下清楚的下一问
 
-每一主要章节结束时，至少要有一个自然的未解决问题，把读者带入下一章。
+如果一节结尾一次抛出多个跨层问题，说明 Progressive Disclosure 失败。
 
-如果一节结尾同时抛出三到五个跨层问题，说明 Progressive Disclosure 失败。
+---
 
-## D. Mechanism Depth：禁止“裸机制名”
+## D. Mechanism Depth：禁止裸机制名
 
-只要一个概念或机制对主线成立是必要的，就不能只出现名字或一句定义。
+只要一个机制对主线成立是必要的，就不能只出现名字或一句定义。
 
 内部调查至少覆盖：
 
 | 维度 | 必须弄清 |
 |---|---|
-| Purpose | 它具体解决哪个问题 |
-| Trigger | 什么条件下进入它 |
-| Input | 它接收哪些对象 / 状态 |
-| Responsibility | 它内部真正负责什么 |
-| State | 它读取、维护、修改什么状态 |
-| Output | 它向后续产生什么 |
-| Collaboration | 它的上下游分别是谁 |
-| Failure / Boundary | 没有它、失败或越界时会怎样 |
+| Purpose | 它解决哪个具体问题 |
+| Trigger | 什么条件进入它 |
+| Input | 接收哪些对象 / 状态 |
+| Responsibility | 内部真正负责什么 |
+| State | 读取、维护、改变什么 |
+| Output | 向后续产生什么 |
+| Collaboration | 上下游分别是谁 |
+| Failure / Boundary | 没有它或失败会怎样 |
 | Source Anchor | 源码 / checked test / docs 在哪里 |
 
-这是作者内部调查清单，不是固定正文模板。
+这是作者内部调查清单，不是正文固定模板。
 
-最终文章仍然按 Narrative Spine 自然叙述。
+---
 
-## E. 需求规格说明书级粒度
+## E. Cognitive Continuity Gate：长文章必须管理“读者已经知道什么”
 
-“讲清一个机制”至少应达到：
+长文章不能只保证相邻两节连贯。
+
+作者必须显式维护一个内部 **Concept Ledger**：
+
+```text
+概念 / Canonical Term
+第一次建立的位置
+当前定义
+与相邻概念的关系
+最后一次出现的位置
+是否需要重新进入
+当前是否允许使用
+```
+
+### E.1 Canonical Term Rule：一个概念一个稳定名称
+
+关键概念第一次建立后，必须选定 canonical term。
+
+例如：
+
+```text
+Work History
+= SessionManager 保存的完整、可追溯工作记录
+
+Current Model Context
+= 当前一次模型请求真正看到的上下文
+
+Session Tree
+= append-only entries 组成的分支结构
+```
+
+后文不能为了语言变化，随意把同一对象改写成：
+
+```text
+Session history
+conversation history
+full history
+historical state
+```
+
+除非明确说明：
+
+> “这里的 Session history 指前文定义的 Work History。”
+
+默认应直接继续使用 canonical term。
+
+### E.2 No Synonym Drift
+
+如果两个词代表同一对象，必须选一个主名称。
+
+如果两个词不完全相同，必须显式说明差异。
+
+禁止让读者自己判断：
+
+```text
+Work History
+Session History
+Session Tree
+Current Branch
+Messages
+Context
+```
+
+到底是不是一回事。
+
+### E.3 Re-entry Bridge：旧概念隔得太远时必须重新接回
+
+如果一个关键概念距离上次正式解释已经跨越多个章节，重新使用前先用 1–3 句恢复它在当前论证中的角色。
+
+例如 Compaction 不能直接写：
+
+> “Compaction 为什么要进入 Session history？”
+
+应先写：
+
+> 前面讲 SessionManager 时，我们建立了两个稳定概念：  
+> **Work History** 是完整工作记录；  
+> **Current Model Context** 是当前请求真正送给模型的内容。  
+> Compaction 现在要解决的，就是两者长度开始失配的问题。
+
+Re-entry Bridge 不重新讲整章，但必须让读者重新找到认知坐标。
+
+### E.4 Reader-State Check：每章开头先检查前置知识
+
+写新章节前内部检查：
+
+```text
+这一章依赖哪些旧概念？
+它们是否已经正式建立？
+读者最后一次见到它们在哪里？
+是否可能已经失去上下文？
+是否需要一句 re-entry？
+```
+
+如果某个前置概念从未建立，不能直接使用。
+
+### E.5 Transition Bridge：跨抽象层级必须显式过桥
+
+以下切换不能直接跳：
+
+```text
+Pi generic mechanism → HMBuddy concrete implementation
+Abstract principle → code / project mapping
+Runtime internals → Product UX
+Mechanism → Architecture ownership decision
+```
+
+每次切换至少回答：
+
+```text
+刚刚建立了什么通用结论？
+↓
+它留下了哪个扩展位置 / 决策位置？
+↓
+当前项目为什么恰好要在这里接入？
+```
+
+例如从 Pi Extension 切到 HMBuddy：
+
+```text
+Extension 已解决：
+产品如何在不修改 Pi runtime 的前提下加入领域能力
+↓
+HMBuddy 的领域差异是什么：
+Office / Banking capability
+↓
+因此第一个具体映射：
+read_office_file
+```
+
+不能直接从“Extension lifecycle”跳到：
+
+```text
+HMBuddy 通过 registerTool 注册……
+```
+
+### E.6 Concept Reuse ≠ Concept Re-definition
+
+旧概念重新出现时：
+
+- 如果定义没变：只做 Re-entry；
+- 如果作用范围扩大：说明“原定义 + 新增部分”；
+- 如果当前只是举例：不要把例子写成新定义。
+
+避免同一概念在文章后半段悄悄改变含义。
+
+---
+
+## F. 需求规格说明书级粒度
+
+一个关键机制至少要达到：
 
 ```text
 为什么需要
 ↓
-何时进入
+什么时候进入
 ↓
 输入是什么
 ↓
-内部状态如何变化
+内部状态怎样变化
 ↓
 输出是什么
 ↓
@@ -396,13 +523,11 @@ AgentSession / SessionManager
 源码 / test 在哪里
 ```
 
-而不是：
+但正文仍按文章叙事组织。
 
-```text
-AgentSession 还负责 queue、compaction、retry。
-```
+---
 
-## F. Locate real entry point，但不要让入口支配叙事
+## G. Locate real entry point，但不要让源码入口支配叙事
 
 必须找到真实入口，例如：
 
@@ -414,13 +539,15 @@ SessionManager.buildSessionContext()
 runLoop()
 ```
 
-但入口只是证据锚点，不是章节排序原则。
+入口是证据锚点，不是章节排序原则。
 
-## G. Trace one real call chain
+---
 
-至少跟踪一条具体输入，但仍然服从 Progressive Disclosure。
+## H. Trace one real call chain
 
-第一次出现某一步时，只展开当前已建立的概念；不能在第一遍调用链里提前塞满所有未来术语。
+至少跟踪一条具体输入。
+
+第一次出现某一步时，只展开当前已建立的概念。
 
 完整链最终应覆盖：
 
@@ -428,92 +555,120 @@ runLoop()
 用户目标
 → Tool declaration
 → Tool Call
-→ Tool lookup / validation / permission / execute
+→ lookup / validation / permission / execute
 → Tool Result
-→ Result reinjection
+→ Observation reinjection
 → next model request
 → AgentLoop stop
 → Session-level continuation / recovery
 → agent_settled
 ```
 
-## H. Preserve cognitive engines
+---
 
-必须保留关键代码、真实对象、数据形态、状态变化、对比、失败例子、调用关系、checked test、有证据的历史演变和必要解释冗余。
+## I. Preserve cognitive engines
 
-Deep Read 可以删除语言重复，但不能删除“为什么下一步成立”的桥梁。
+必须保留：
 
-## I. Explain choices carefully
+- 关键代码；
+- 真实对象；
+- 数据形态；
+- 状态变化；
+- 对比；
+- 失败例子；
+- checked test；
+- 调用关系；
+- 必要解释冗余。
+
+可以删除语言重复，但不能删除理解桥梁。
+
+---
+
+## J. Explain choices carefully
 
 源码 / docs / changelog 有证据时可以说明设计原因。
 
-只有推断时，必须明确写：
+只有推断时，明确写：
 
 > 从当前实现可以推断……
 
-## J. Abstract last
+---
 
-只有具体问题、运行路径、关键机制都已经看懂后，才形成概念定义、ownership、不变量、边界和 mental model。
+## K. Abstract last
 
-抽象是已理解事实的压缩，不是解释的起点。
+只有具体问题、真实路径、关键机制和长期概念关系都已经建立后，才形成：
+
+- 概念定义；
+- ownership；
+- 不变量；
+- 边界；
+- mental model。
 
 ---
 
 # 7. D Acceptance Gate
 
-D 只有同时通过 Narrative、Progressive Disclosure、Mechanism Depth 三类 Gate 才完成。
+D 只有同时通过四类 Gate 才完成。
 
 ## 7.1 Narrative Gate
 
-陌生读者应能回答：
-
-1. 文章最开始的原始矛盾是什么？
+1. 原始矛盾是什么？
 2. 每个主要机制为什么在那个位置出现？
-3. 上一节留下了什么问题，逼出了下一节？
-4. 如果交换两个主要章节，因果链是否会断？
-5. 最终架构是否像被问题一步步推导出来，而不是作者一次性宣布？
+3. 上一节留下什么问题，逼出下一节？
+4. 调换章节后，因果链是否会断？
+5. 最终架构是否像被问题推导出来？
 
 ## 7.2 Progressive Disclosure Gate
 
-逐节检查：
-
-1. 当前章节到底只解决哪个问题？
-2. 本节引入的每个新概念是否都是解决当前问题所必需？
-3. 是否提前使用了尚未推导出来的概念解释当前机制？
-4. 是否因为源码同文件，就把多个认知层一起讲了？
-5. 本节结尾是否留下一个清楚、自然的“下一问”？
-6. 如果删除提前泄露的后续术语，当前章节是否仍能完整成立？
-
-如果读者需要先理解后面三章，才能理解当前章节，Progressive Disclosure Gate 失败。
+1. 当前章节只解决哪个问题？
+2. 本节新概念是否都是当前必需？
+3. 是否提前使用未来概念？
+4. 是否因为源码同文件而混讲多个认知层？
+5. 结尾是否留下一个主要下一问？
+6. 删除未来术语后，本节是否仍成立？
 
 ## 7.3 Mechanism Depth Gate
 
-对正文中每一个关键机制，陌生读者至少应能说明：
+对每个关键机制，读者能否说明：
 
-1. 它为什么存在？
-2. 什么条件触发它？
-3. 它接收什么输入或前置状态？
-4. 它具体承担哪些职责？
-5. 它改变或维护什么状态？
-6. 它向后续输出什么？
-7. 它与上下游分别怎么协作？
-8. 没有它或失败时具体会坏在哪里？
-9. 真实源码 / test / docs 锚点在哪里？
+1. Purpose；
+2. Trigger；
+3. Input；
+4. Responsibility；
+5. State；
+6. Output；
+7. Collaboration；
+8. Failure / Boundary；
+9. Source Anchor。
 
-如果正文只留下机制名，D 未完成。
+## 7.4 Cognitive Continuity Gate
 
-## 7.4 Whole-article Gate
+逐章检查：
+
+1. 本章使用的每个关键术语是否已经正式建立？
+2. 是否坚持 canonical term，而没有 synonym drift？
+3. 如果旧概念相隔较远，是否提供 Re-entry Bridge？
+4. 是否把 Work History、Session Tree、Current Branch、Messages、Current Model Context 等不同层次混成一个词？
+5. 是否发生 Pi→HMBuddy、Abstract→Concrete、Runtime→Product 等层级切换？
+6. 如果发生，是否有 Transition Bridge？
+7. 旧概念重新出现时，定义是否保持稳定？
+8. 读者是否需要翻回很多页才能知道“这里说的这个词是什么”？
+
+如果读者在后半程遇到一个看似熟悉但无法定位含义的词，Cognitive Continuity Gate 失败。
+
+## 7.5 Whole-article Gate
 
 读者还应能：
 
-- 跟踪具体输入走完主要调用链；
-- 指出关键状态在哪里变化；
+- 跟踪完整调用链；
+- 指出关键状态变化；
 - 区分相邻概念；
 - 区分 Source fact / Derived explanation / HMBuddy decision；
-- 对相邻条件变化做出有依据的预测；
-- 在读完整篇后，能够反向解释“为什么 Pi 最终需要这些层”，而不是只能背模块名称。
+- 对相邻条件变化做预测；
+- 反向解释为什么 Pi 最终需要这些层；
+- 不需要依赖作者脑中的隐含词义映射。
 
-任何关键步骤仍需读者自行脑补，D 继续展开。
+任何关键步骤仍需自行脑补，D 继续展开。
 
 ---
 # 8. R — Review：独立审阅

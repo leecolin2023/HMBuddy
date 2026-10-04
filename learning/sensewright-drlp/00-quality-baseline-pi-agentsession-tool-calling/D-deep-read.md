@@ -3,73 +3,67 @@
 > **目标读者：** 会基本编程、知道 LLM 和 API，但没读过 Pi，也不了解 HMBuddy V1.0。  
 > **Source pin：** `earendil-works/pi@4c6fb7cfe8c538a668726f6f8b3554098c39faee`  
 > **Pi package：** `@earendil-works/pi-coding-agent@1.0.0`  
-> **阅读目标：** 不按源码目录讲 Pi。只沿一条问题链推进：每解决一个问题，再让下一个问题出现；每个关键机制都解释到足以支撑需求规格和实现判断的粒度。
+> **阅读目标：** 沿“问题 → 最小机制 → 新问题”的主线理解 Pi；关键机制讲到需求规格说明书粒度；长篇过程中保持术语和抽象层级连续。
 
 ---
 
-# 0. 原始矛盾：会回答，不等于会做事
+# 0. 起点：会回答，不等于会做事
 
 用户对 HMBuddy 说：
 
 > “读取 `sample.docx`，告诉我项目编号、负责人和 Runtime。”
 
-一个普通 LLM 应用完全可以实现这个功能：
+一个普通 LLM 应用完全可以：
 
 ```text
 宿主程序判断用户要读文件
 → 宿主程序读取 sample.docx
-→ 把内容拼进 Prompt
-→ 调模型
+→ 把文本塞进 Prompt
 → 模型回答
 ```
 
 结果可能完全正确。
 
-但这里真正做决定的是宿主程序。
+但控制权仍在宿主。
 
-宿主程序提前决定了：
+宿主已经提前决定：
 
-- 什么时候读文件；
-- 读哪个文件；
+- 要不要读；
+- 读哪一份；
 - 调什么函数；
-- 文件读完以后下一步是什么。
+- 读完下一步是什么。
 
-模型只是接收已经准备好的信息。
+一旦用户说：
 
-如果用户换成：
+> “先看看项目目录里有哪些材料，再自己判断应该读哪份，然后告诉我主要风险。”
 
-> “先看看这个项目目录里有哪些材料，再自己判断应该读哪一份，然后回答我风险点。”
-
-宿主程序就必须继续预写：
+宿主就需要继续预写：
 
 ```text
 先 list
-如果……
-再 search
-如果……
-再 read
-然后……
+→ 再判断
+→ 再 search
+→ 再判断
+→ 再 read
 ```
 
-流程越开放，宿主里的 `if / else` 越多。
+开放程度越高，宿主里的流程判断越多。
 
-所以真正的问题不是“怎样让 LLM 回答文件问题”，而是：
+所以第一个真正的问题是：
 
 > **怎样让模型自己选择下一步动作？**
 
-这才是 Tool Calling 的起点。
-
 ---
 
-# 1. 第一步：先让模型知道“它有哪些动作”
+# 1. 先让模型知道：它有哪些动作
 
-模型如果从来不知道系统有 `read_office_file`，就不可能主动选择它。
+模型不可能主动选择一个它从未见过的动作。
 
 因此第一步不是执行，而是**声明动作**。
 
-在 Pi 中，这个动作通过 `ToolDefinition` 描述。
+Pi 用 Tool 描述模型可以选择的 Action。
 
-从模型视角，最关键的是：
+对模型最关键的是：
 
 ```text
 name
@@ -84,7 +78,7 @@ name:
 read_office_file
 
 description:
-读取工作区中的 Office 文件并返回结构化内容
+读取工作区中的 Office 文件
 
 parameters:
 {
@@ -92,35 +86,32 @@ parameters:
 }
 ```
 
-这三部分分别回答：
+它们分别回答：
 
 ```text
 动作叫什么？
 ↓
-什么时候应该用？
+什么时候适合用？
 ↓
-调用时必须给什么参数？
+调用时必须提供什么？
 ```
 
-而 `execute()` 是这个动作在程序中的真正实现。
-
-所以从一开始就要分清：
+程序侧还有：
 
 ```text
-Tool declaration
-≠
-Tool implementation
+execute()
 ```
 
-Tool declaration 是模型的 **Action Space**。
+它是真正的实现。
 
-Tool implementation 是程序真正能执行的代码。
+于是第一个稳定概念建立起来：
 
-模型拿到 declaration 后，终于可以表达：
+> **Tool declaration**：模型可见的 Action Contract。  
+> **Tool implementation**：程序真正执行动作的代码。
 
-> “为了回答这个问题，我要调用 `read_office_file`。”
+这两者不能混为一谈。
 
-它可能输出：
+模型拿到 declaration 后，可以输出：
 
 ```json
 {
@@ -131,71 +122,53 @@ Tool implementation 是程序真正能执行的代码。
 }
 ```
 
-到这里，第一个问题解决了：
+现在模型已经会表达：
 
-> 模型已经能够自己选择动作。
+> “我想执行这个动作。”
 
-但现在出现了一个非常具体的新问题：
+但仍只是表达。
 
-> **模型只是“说它想调用”。这段 `name + arguments` 怎样真正变成一次函数执行？**
+所以唯一下一问是：
 
-下一步只解决这个问题。
+> **`name + arguments` 怎样真正变成一次函数调用？**
 
 ---
 
-# 2. 从 Action Intent 到真实执行：先做一个最小执行器
+# 2. 从 Tool Call 到一次真实执行
 
-先不要想 AgentLoop，也不要想 Session。
+先只解决“一次 Tool 怎么执行”。
 
-假设我们自己写最简单的执行器，逻辑大概是：
+最小执行器可以想成：
 
 ```text
 收到 Tool Call
-↓
-根据 name 找到实现
-↓
-把 arguments 传进去
-↓
-调用函数
-↓
-拿到结果
+→ 根据 name 找到实现
+→ 把 arguments 传进去
+→ 调函数
+→ 得到结果
 ```
 
-例如：
+此时先建立另一个稳定概念：
 
-```text
-read_office_file
-↓
-找到 readOfficeFile 实现
-↓
-传入 path
-↓
-执行
-```
+> **Tool Call**：模型给出的结构化 Action Intent。
 
-这已经回答了“谁来执行”的最朴素版本：
+它不是代码执行本身。
 
-> **模型只表达 Action Intent；程序中的 Tool execution layer 把 Intent 变成真实调用。**
-
-在 Pi 当前实现里，这条执行路径位于：
+在 Pi 当前实现中，这条执行路径位于：
 
 ```text
 packages/agent/src/agent-loop.ts
 ```
 
-但现在我们只关心“执行一次 Tool”，暂时不需要理解为什么文件名叫 `agent-loop.ts`。
+但源码文件名不决定我们现在就要理解 AgentLoop。
 
-因为仅仅“找到函数然后调用”还不够。
-
-第一个马上会发生的故障是：
-
-> **如果模型给了一个不存在的 Tool 名怎么办？**
+此刻只关心“一次 Tool execution”。
 
 ---
 
-## 2.1 Tool lookup：名字必须先解析成真实能力
+## 2.1 第一道问题：Tool 名真的存在吗？
 
-假设模型输出：
+模型可能输出：
 
 ```text
 read_doc
@@ -207,51 +180,31 @@ read_doc
 read_office_file
 ```
 
-程序不能直接：
-
-```text
-tools["read_doc"](...)
-```
-
-然后因为 `undefined` 崩掉。
-
-Pi 的 Tool execution 路径会先根据：
+所以程序必须先做：
 
 ```text
 toolCall.name
-```
-
-从当前可执行 Tool 集合中查找。
-
-找不到时，形成一个标准失败结果：
-
-```text
-Tool <name> not found
-```
-
-这里解决的是一个很基础但很重要的问题：
-
-> **模型使用的是符号名称，程序执行的是具体实现，两者必须有确定的解析关系。**
-
-所以一次 Tool execution 的第一道门是：
-
-```text
-Action name
 → Tool lookup
 → concrete implementation
 ```
 
-现在 Tool 找到了。
+Pi 找不到 Tool 时，会形成一个标准错误结果，而不是让代码因为 `undefined` 崩掉。
 
-新的问题自然出现：
+这一步解决：
 
-> **名字找对了，模型给的参数就一定能用吗？**
+> 模型使用的是符号名称；程序需要把它解析成当前真正可执行的能力。
+
+Tool 找到了。
+
+唯一下一问：
+
+> **模型给的参数能直接交给实现吗？**
 
 ---
 
-## 2.2 Schema validation：模型输出是概率结果，参数不能直接信任
+## 2.2 第二道问题：参数是模型生成的，不能直接信任
 
-`read_office_file` 需要：
+Tool 要求：
 
 ```json
 {
@@ -259,13 +212,13 @@ Action name
 }
 ```
 
-但模型可能生成：
+模型却可能输出：
 
 ```json
 {}
 ```
 
-或者：
+或：
 
 ```json
 {
@@ -273,76 +226,68 @@ Action name
 }
 ```
 
-或者 provider 兼容层返回需要整理的旧格式。
-
-如果这些参数直接进入 Office Runtime，错误会扩散到业务层。
-
-因此 Pi 在真正执行 Tool 前，会先：
+因此真正执行前，需要：
 
 ```text
 prepareArguments
 → validateToolArguments
 ```
 
-`prepareArguments` 可以处理兼容性整理。
+`prepareArguments` 可以处理参数兼容性整理。
 
-`validateToolArguments` 则按照 Tool 的 schema 验证参数。
+`validateToolArguments` 根据 Tool schema 做结构验证。
 
-这使 Tool 实现可以依赖一个很重要的前提：
+于是 Tool implementation 可以依赖：
 
-> **正常进入 `execute()` 的参数，已经通过 Tool contract 的结构校验。**
+> 正常进入 `execute()` 的参数已经通过 Tool Contract 的结构校验。
 
-如果 validation 失败，Pi 不需要启动业务实现，而是直接得到一个 error Tool Result。
+参数也正确了。
 
-现在名字正确，参数也正确。
+唯一下一问：
 
-下一问是：
-
-> **参数合法，是不是就代表这个动作一定允许执行？**
+> **参数合法，就一定允许执行吗？**
 
 ---
 
-## 2.3 `beforeToolCall`：合法动作也可能没有权限做
+## 2.3 第三道问题：合法动作仍可能不被允许
 
-假设以后 HMBuddy 有：
+假设未来 Tool 是：
 
 ```text
-delete_office_file
+delete_file
 send_external_email
-write_core_system
+write_business_system
 ```
 
-模型给出的 Tool 名和参数都可能完全正确。
+模型可能给出完全合法的参数。
 
-但银行系统仍然可能要求：
+但银行系统仍可能要求：
 
 - 当前用户有权限；
-- 当前路径在允许范围；
-- 敏感操作需要 ASK；
-- 外发动作需要审批；
-- 某类数据禁止进入开放网络。
+- 目标路径允许访问；
+- 敏感写入需要确认；
+- 外发需要审批。
 
 所以：
 
 ```text
-参数正确
+参数合法
 ≠
 动作被授权
 ```
 
-Pi 的 Tool execution 路径提供 `beforeToolCall` hook。
+Pi 在真正执行前提供 `beforeToolCall` hook。
 
-它发生在：
+逻辑位置是：
 
 ```text
 Tool 已找到
-↓
-参数已校验
-↓
-真正 execute 之前
+→ 参数已校验
+→ beforeToolCall
+→ execute
 ```
 
-上层可以返回：
+它可以阻断：
 
 ```text
 block = true
@@ -350,96 +295,58 @@ reason = ...
 terminate = true / false
 ```
 
-于是 Tool execution 多了一道清楚的控制点：
+这里建立一个重要边界：
 
-```text
-模型想做
-↓
-参数也对
-↓
-Policy 判断是否允许
-↓
-允许后才真正执行
-```
+> 模型负责提出 Action Intent；程序负责决定这个 Action 是否允许落地。
 
-这也是为什么银行治理不应该主要依赖 Prompt。
+动作现在也获准了。
 
-Prompt 可以影响模型行为。
+唯一下一问：
 
-但真正不能执行的动作，必须在程序边界阻断。
-
-现在 Tool 找到了、参数合法、Policy 也允许。
-
-终于可以执行。
-
-但还有一个现实问题：
-
-> **函数本身也可能失败。失败以后，系统怎样把它交给后续流程，而不是直接崩掉？**
+> **即使允许执行，函数本身失败怎么办？**
 
 ---
 
-## 2.4 执行失败也需要统一结果
+## 2.4 第四道问题：执行失败也必须成为统一结果
 
-Tool 实现可能：
+Tool implementation 仍可能：
 
 - 文件不存在；
-- Python subprocess 超时；
-- 解析失败；
-- 外部服务拒绝；
-- execute 自己抛出异常。
+- subprocess 超时；
+- Parser 失败；
+- 外部服务异常；
+- execute 抛错。
 
-如果每种失败都用不同异常一路冒泡，后面的系统很难继续做决定。
+Pi 会把多类失败统一变成 Tool Result，并标记错误状态。
 
-Pi 的 Tool execution 路径会把很多失败转成统一的 Tool Result，并带：
-
-```text
-isError = true
-```
-
-例如：
-
-```text
-PATH_NOT_ALLOWED
-FILE_NOT_FOUND
-Tool xxx not found
-参数校验失败
-```
-
-到这里，一次 Tool Call 的最小执行闭环才真正完整：
+因此一次 Tool execution 的完整最小链是：
 
 ```text
 Tool Call
-↓
-lookup
-↓
-schema validation
-↓
-beforeToolCall policy
-↓
-execute
-↓
-统一 Tool Result
+→ lookup
+→ schema validation
+→ beforeToolCall
+→ execute
+→ Tool Result
 ```
 
-现在我们已经解决了第二个大问题：
+到这里，“一次动作怎样安全落地”已经完整。
 
-> **模型的 Action Intent 怎样安全地变成一次真实程序动作。**
+现在正式建立第三个稳定概念：
 
-注意，到这里仍然不需要理解 AgentLoop。
+> **Tool Result**：一次 Tool execution 的标准结果，可以成功，也可以表示失败。
 
-因为我们现在只完成了：
+注意，我们还没有说它是不是最终用户答案。
 
-> “一次动作怎样执行”。
+这正是下一问：
 
-新的问题是：
-
-> **Tool Result 已经拿到了。是不是直接把它展示给用户，任务就结束了？**
+> **Tool Result 已经拿到了，为什么不能直接展示给用户然后结束？**
 
 ---
 
-# 3. Tool Result 不是答案：它只是模型新获得的事实
+# 3. Tool Result 不是 Final Answer：它只是新的 Observation
 
-假设文件读取结果是：
+假设 `read_office_file` 返回：
 
 ```text
 项目编号：HM-VNEXT-001
@@ -447,145 +354,126 @@ execute
 Runtime：Pi + Python
 ```
 
-如果用户只问：
+如果用户只问“负责人是谁”，似乎可以直接返回。
 
-> “负责人是谁？”
+但如果用户问：
 
-直接返回“林海”似乎没问题。
+> “负责人是谁，并判断当前 Runtime 是否符合项目目标。”
 
-但用户可能问：
+Tool 只完成了“读取文件”。
 
-> “负责人是谁，并判断当前 Runtime 是否和项目目标一致。”
+它不知道最终目标是否完成。
 
-Tool 只完成了“读取”。
+所以我们引入一个认知层面的名称：
 
-它并不知道：
+> **Observation**：Agent 采取 Action 后，新获得的事实或状态。
 
-- 用户最终想判断什么；
-- 是否还需要第二份材料；
-- 是否需要比较；
-- 是否已经拥有足够证据。
+这里明确：
 
-因此 Tool Result 的职责不是“完成用户任务”。
+```text
+Tool Result
+= 程序层标准结果
 
-它更像是：
+Observation
+= 从 Agent 决策角度看，这个结果提供的新信息
+```
 
-> **模型刚刚采取一个动作后得到的 Observation。**
+两者不是两个不同对象，而是同一结果在不同认知层的含义。
 
-执行前模型知道：
+模型原本只有：
 
 ```text
 用户目标
 +
-旧上下文
+已有 Context
 ```
 
-执行后又知道：
+执行 Tool 后多了：
 
 ```text
-刚刚读到的文件事实
+Observation
 ```
 
-如果这些新事实不再交给模型，模型根本没有机会基于执行结果继续判断。
+如果 Observation 不重新交给模型，模型就无法：
 
-因此下一步必然是：
+- 判断是否足够；
+- 决定是否还要搜索；
+- 决定是否要读第二份文件；
+- 处理 Tool 失败；
+- 形成最终回答。
+
+所以：
 
 ```text
 Tool Result
-→ 回到模型可见 Context
+→ 放回模型可见 Context
 ```
 
-现在问题又推进了一层：
+现在唯一下一问变成：
 
-> **结果回到 Context 以后，谁负责真的再请求模型一次？**
+> **Observation 已经回来了，谁负责真的再让模型决策一次？**
 
-到这里，AgentLoop 才第一次有必要出现。
+到这里才需要 AgentLoop。
 
 ---
 
-# 4. AgentLoop：为什么 Observation 之后还要再 Decision
+# 4. AgentLoop：让 Observation 重新进入 Decision
 
-我们现在已经推导出：
-
-```text
-用户目标
-↓
-模型选择 Action
-↓
-程序执行 Action
-↓
-得到 Observation
-```
-
-但如果系统在这里停止，依然只是：
+我们已经拥有：
 
 ```text
-LLM
-→ function
-→ end
-```
-
-真正的 Agent 需要：
-
-```text
-LLM
+Decision
 → Action
 → Observation
-→ LLM again
 ```
 
-也就是：
+真正的 Agent 还需要：
 
-> **模型必须能够根据刚刚发生的真实结果继续决策。**
+```text
+Observation
+→ Decision again
+```
 
-这正是 Pi `runLoop()` 解决的问题。
+Pi 的 `runLoop()` 解决的就是这个闭环。
 
 ---
 
-## 4.1 一轮 assistant response 完成后，Pi 看什么
+## 4.1 一轮模型响应后发生什么
 
-模型的 assistant message 可能包含：
+assistant message 中可能包含 Tool Call。
 
-```text
-普通文本
-thinking
-toolCall
-```
-
-Pi 会筛出：
+Pi 找出：
 
 ```text
 type = toolCall
 ```
 
-如果存在 Tool Call，就进入前面已经理解的 Tool execution 路径。
+然后走刚才已经建立的 Tool execution 路径。
 
-执行结束后，Pi 得到：
+执行完成后得到：
 
 ```text
 ToolResultMessage[]
 ```
 
-然后把这些 Result 加入：
+这些结果被加入：
 
 ```text
 currentContext.messages
 ```
 
-所以 Context 发生了真实变化：
-
-执行前：
+因此当前 Context 从：
 
 ```text
 User:
-读取 sample.docx……
+读取 sample.docx
 ```
 
-执行后：
+变成：
 
 ```text
 User:
-读取 sample.docx……
+读取 sample.docx
 
 Assistant:
 toolCall(read_office_file)
@@ -594,68 +482,36 @@ Tool:
 HM-VNEXT-001 / 林海 / Pi + Python
 ```
 
-模型下一次看到的是一个已经包含 Observation 的世界。
+此时 Observation 已经真正进入下一轮模型可见状态。
 
 ---
 
-## 4.2 `hasMoreToolCalls` 为什么重要
+## 4.2 为什么会再请求模型
 
-Pi 会根据 Tool batch 是否要求终止，设置：
-
-```text
-hasMoreToolCalls
-```
-
-只要刚才的 Action 仍允许继续，内层 loop 就再次请求模型。
-
-因此：
-
-```text
-第一次模型请求
-→ 决定要读文件
-
-Tool 执行
-→ 得到文件事实
-
-第二次模型请求
-→ 基于文件事实继续判断
-```
-
-这就是 AgentLoop 最核心的职责：
-
-> **保证 Action 产生的新状态能够重新进入 Decision。**
-
----
-
-## 4.3 如果第二轮模型还需要 Tool 呢
-
-例如第一次读取后发现：
-
-```text
-文档只写了“详见附件二”
-```
-
-模型可以第二次再产生新的 Tool Call。
+只要刚才的 Tool batch 没有要求整体终止，Pi 会继续下一轮模型请求。
 
 于是：
 
 ```text
-Decision
-→ Action
-→ Observation
-→ Decision
-→ Action
-→ Observation
-→ …
+第一次模型请求
+→ 模型决定读文件
+
+Tool execution
+→ 得到文件事实
+
+第二次模型请求
+→ 模型基于文件事实继续判断
 ```
 
-直到某一轮模型不再产生 Tool Call。
+这就是 AgentLoop 的核心职责：
+
+> **让 Action 产生的 Observation 能够重新进入 Decision。**
 
 ---
 
-## 4.4 多个 Tool Call 怎样执行
+## 4.3 多个 Tool Call 怎么办
 
-一个 assistant message 可能一次发出多个 Tool Call。
+一个 assistant message 可以产生多个 Tool Call。
 
 Pi 支持：
 
@@ -664,76 +520,73 @@ sequential
 parallel
 ```
 
-Tool 可以通过 `executionMode` 要求顺序执行。
+是否并行由 Tool execution 配置和 `executionMode` 决定。
 
-如果不存在 sequential 要求，多个调用可以并行。
+即使并行，最终形成 ToolResultMessage 时仍保持原 Tool Call 顺序。
 
-但最终生成 ToolResultMessage 时仍保持 source order。
+这样：
 
-这里解决的是：
-
-> **物理执行可以并发，但模型看到的 Tool Call / Tool Result 对应关系必须稳定。**
+> 物理执行可以并发，但模型看到的 Action / Result 对应关系仍然稳定。
 
 ---
 
-## 4.5 到什么条件，AgentLoop 才自然停止
+## 4.4 Tool 失败后为什么 Agent 仍可能继续
 
-当当前轮：
+前面建立的 Tool Result 可以表示失败。
 
-- 没有新的 Tool Call；
-- 没有 steering message；
-- 没有 follow-up；
-- 没有显式 continuation；
-
-loop 才有机会结束。
-
-先暂时只记住：
-
-> AgentLoop 负责一段 run 内的“继续还是停止”。
-
-到这里，我们已经有一个真正会：
+所以：
 
 ```text
-看目标
-→ 选择动作
-→ 看结果
-→ 再决定
+Tool not found
+参数错误
+PATH_NOT_ALLOWED
+Parser failure
 ```
 
-的 Agent run。
+都可以作为 Observation 回到模型。
 
-但真实办公不是一次 run 就结束。
+模型随后可以：
 
-用户下一句很可能是：
+- 换策略；
+- 请求用户操作；
+- 明确解释失败。
 
-> “刚才那份文件，再帮我看一下现金流。”
+所以 Tool failure 不必天然等于 Agent crash。
 
-新的问题变成：
+---
 
-> **一次 AgentLoop 已经结束以后，上一轮工作怎样继续成为下一轮的上下文？**
+## 4.5 一次 Agent run 什么时候结束
+
+当前 run 中，当：
+
+- 没有更多 Tool Call；
+- 没有新的当前工作输入；
+- 没有显式 continuation；
+
+底层 Agent run 才会自然结束。
+
+到这里，AgentLoop 已经完整解决“一次 run 内的 Decide → Act → Observe”。
+
+唯一下一问：
+
+> **下一次用户再说“继续刚才那份文件”时，上一轮工作的状态从哪里来？**
 
 这才进入 Session。
 
 ---
 
-# 5. 一次 run 不等于一段工作：为什么需要 Session
+# 5. 从一次 run 到长期工作：先建立三个稳定概念
 
-一次 AgentLoop 有一个清楚的生命周期：
+办公 Agent 的工作通常不是一轮完成。
 
-```text
-开始
-→ 多轮 Tool / Model 决策
-→ 自然停止
-```
-
-但用户理解的“工作”可能持续很久：
+用户会：
 
 ```text
-上午读报告
-→ 下午继续追问
-→ 改一次方向
-→ 读另一份材料
-→ 第二天重新打开
+先读报告
+→ 继续追问
+→ 改方向
+→ 再读新文件
+→ 隔一段时间恢复
 ```
 
 所以：
@@ -741,68 +594,95 @@ loop 才有机会结束。
 ```text
 一次 Agent run
 ≠
-一段长期工作会话
+一段长期工作
 ```
 
-现在新的问题是：
+接下来为了避免后文术语漂移，我们先建立三个 canonical term。
 
-> **怎样把多次 run 组织成同一段可以继续的工作？**
+### Work History
 
-最直觉的答案是：保存历史。
+> **Work History**：一段工作完整、可追溯的历史记录。它不仅可能包含普通消息，也包括模型切换、Compaction、Extension state 等 Session entry。
 
-但“保存历史”很快又会暴露更具体的问题。
+### Session Tree
 
----
+> **Session Tree**：Pi 用 append-only entries + `parentId` 表示 Work History 分支关系的结构。
 
-# 6. SessionManager：历史为什么不能只是一个 `messages[]`
+### Current Model Context
 
-最开始完全可以想象：
+> **Current Model Context**：某一次真实模型请求当前应该看到的内容。
+
+这三个词后文保持不变。
+
+特别注意：
 
 ```text
-messages = []
+Work History
+≠
+Session Tree
+≠
+Current Model Context
 ```
 
-每轮结束就 append。
+Work History 是“完整工作记录”这个语义概念。
 
-如果对话永远线性增长，这似乎够用。
+Session Tree 是 Pi 保存 Work History 的结构。
 
-但 Pi 需要支持：
+Current Model Context 是从 Work History 投影出来、真正送给模型的当前上下文。
 
-- Resume；
-- 从早期节点 Branch；
-- Model change；
-- Thinking level change；
-- Compaction；
-- Extension custom state；
-- Context edit。
+现在我们才能问：
 
-此时历史已经不只是“一串聊天消息”。
+> **谁负责维护这些长期状态，并把 Work History 变成 Current Model Context？**
 
 ---
 
-## 6.1 第一个新问题：如果用户从旧节点重新开始怎么办
+# 6. SessionManager：完整工作记录如何变成当前上下文
 
-假设历史是：
+Pi 的 `SessionManager` 负责管理 Work History 的 Session entries，并重建当前工作路径与 Current Model Context。
+
+---
+
+## 6.1 为什么不是一个 mutable `messages[]`
+
+长期工作中不只有：
+
+```text
+user
+assistant
+toolResult
+```
+
+还可能有：
+
+```text
+model_change
+thinking_level_change
+usage
+compaction
+branch_summary
+custom
+context_edit
+session_info
+```
+
+而且用户还可能从旧节点重新开始。
+
+假设曾经：
 
 ```text
 A → B → C → D
 ```
 
-用户回到 B，选择另一条路线：
+后来从 B 分出：
 
 ```text
 A → B → E → F
 ```
 
-如果只有 mutable `messages[]`，最容易做的是删掉 C、D。
+如果只有 mutable `messages[]`，很容易把旧路径 C、D 覆盖掉。
 
-但这样原来的工作历史消失了。
+Pi 选择用 append-only Session Tree。
 
-Pi 的 SessionManager 选择：
-
-> **append-only tree。**
-
-每个 SessionEntry 有：
+每个 entry 有：
 
 ```text
 id
@@ -816,83 +696,62 @@ timestamp
 leafId
 ```
 
-代表工作正位于哪一个叶子。
-
-所以 Branch 并不是“重写历史”，而是：
-
-```text
-移动当前 leaf
-↓
-从新的父节点继续 append
-```
-
-这解决了：
-
-> **历史可以分叉，但过去发生过的内容不需要被覆盖。**
+表示当前工作落在哪个叶子。
 
 ---
 
-## 6.2 `getBranch()`：整个树里，当前工作到底是哪一条线
+## 6.2 `getBranch()`：当前正在沿哪条 Work History 路径工作
 
-Session file 可能同时包含：
+Session Tree 里可以同时保留多条分支。
 
-```text
-A → B → C → D
-      ↘ E → F
-```
-
-模型下一轮显然不能同时把两条互斥分支都当成当前事实。
+但模型当前只能沿其中一条工作路径继续。
 
 `getBranch()` 从当前 leaf 沿 `parentId` 回到 root，再反转。
 
-所以它得到：
+它得到：
 
-> **当前工作路径。**
+> 当前工作所处的 branch。
 
-这一步解决的是：
+所以：
 
 ```text
-Session history
-≠
-Current branch
+完整 Work History
 ```
 
-但即使拿到了 current branch，也还不能直接全部发给模型。
+可能包含多条路径；
 
-为什么？
+而：
 
-因为 branch 里并不全是模型消息。
+```text
+Current Branch
+```
+
+只是当前 leaf 对应的一条路径。
+
+这里再建立一个 canonical term：
+
+> **Current Branch**：Session Tree 中当前 leaf 对应的工作路径。
 
 ---
 
-## 6.3 `buildSessionProjection()`：工作历史和模型 Context 不是一回事
+## 6.3 为什么 Current Branch 还不能直接变成 Current Model Context
 
-Session branch 中可能包含：
+Current Branch 中仍包含很多不应直接发给模型的 entry。
+
+例如：
 
 ```text
-message
-model_change
-thinking_level_change
 usage
-compaction
-branch_summary
-custom
-custom_message
-context_edit
+label
 session_info
+model_change
+compaction
+context_edit
 ```
 
-有些 entry 只是运行状态。
+因此还需要一次投影。
 
-有些会改变模型真正应该看到的内容。
-
-所以 SessionManager 需要把：
-
-```text
-append-only Session entries
-```
-
-投影成：
+`buildSessionProjection()` 把当前 Session state 解析为：
 
 ```text
 messages
@@ -900,37 +759,35 @@ thinkingLevel
 model
 ```
 
-这就是：
+`buildSessionContext()` 再生成当前运行所需的 SessionContext。
+
+所以：
 
 ```text
-buildSessionProjection()
+Work History
+→ Session Tree
+→ Current Branch
+→ Session Projection
+→ Current Model Context
 ```
 
-而：
+这条链非常重要。
 
-```text
-buildSessionContext()
-```
+它说明 SessionManager 不是“保存聊天记录”的工具。
 
-进一步返回当前模型运行需要的 SessionContext。
+它负责的是：
 
-于是 SessionManager 的核心职责变得清楚：
-
-> **它不是单纯保存历史，而是负责从完整工作历史中重建“当前这一刻模型应该看到什么”。**
-
-这也是为什么它是 context authority。
+> **从完整、可追溯的工作历史中，重建当前模型应该看到什么。**
 
 ---
 
-## 6.4 `inMemory()` 只改变存储方式
+## 6.4 `inMemory()` 改变的只是持久化
 
 VNext-01 使用：
 
 ```text
 SessionManager.inMemory()
 ```
-
-它不会把 SessionManager 变成一个简化版。
 
 它只是：
 
@@ -940,57 +797,43 @@ persist = false
 
 不写 Session file。
 
-Branch、Entry、Projection、Context reconstruction 仍然存在。
+Work History 的 entry 逻辑、Session Tree、Current Branch 与 Context projection 仍然存在。
 
-因此：
+所以：
 
 ```text
 inMemory
 改变 persistence
 
 不改变
-Session ownership
+SessionManager 的 authority
 ```
 
-到这里，长期工作终于有了历史基础。
+现在长期工作的“历史问题”解决了。
 
-但还有一个真实交互问题没有解决：
+唯一下一问：
 
-> **Agent 正在运行时，用户又发来一句话，这句话应该什么时候进入工作？**
-
-这就逼出了 Queue。
+> **如果 Agent 正在当前 run 中工作，用户又发一条新要求，这条输入应该什么时候生效？**
 
 ---
 
-# 7. Queue：新输入不是“有没有”，而是“什么时候生效”
+# 7. Queue：新输入最重要的不是“有没有”，而是“何时生效”
 
 假设 Agent 正在：
 
 ```text
 读文件
-→ Tool 执行
+→ Tool execution
 → 准备下一次模型判断
 ```
 
-这时用户输入：
+用户突然说：
 
-> “先不要分析利润，重点看现金流。”
+> “先别看利润，重点看现金流。”
 
-如果系统只是：
+如果只是 append 一条 message，并不能说明它什么时候进入 Current Model Context。
 
-```text
-messages.push(newMessage)
-```
-
-并不能说明这条指令什么时候生效。
-
-它可能：
-
-- 错过当前 run；
-- 立即打断 Tool；
-- 等整个任务做完才生效。
-
-所以 Pi 区分两种明确语义：
+Pi 因此区分：
 
 ```text
 steer
@@ -999,207 +842,177 @@ followUp
 
 ---
 
-## 7.1 `steer`：当前工作没结束，但下一次决策要改变方向
+## 7.1 `steer`：属于当前工作，要尽快影响下一次决策
 
 `AgentSession.steer()` 的语义是：
 
-> 当前 run 仍在进行，但这条用户输入要在当前 assistant turn 的 Tool Call 执行完后、下一次 LLM request 前进入。
+> 当前 run 仍在进行，但新输入应在当前 assistant turn 的 Tool Call 执行完后、下一次模型请求前进入。
 
-内部路径：
+内部：
 
 ```text
 steer(text)
 → _queueUserInput(..., "steer")
-→ input handlers / skill / template
 → _queueSteer()
 → _steeringMessages.push(text)
 → queue_update
 → agent.steer(UserMessage)
 ```
 
-这里有两层状态。
-
-AgentSession 保存 `_steeringMessages`，供 UI / Session 状态观察。
-
-底层 Agent 保存真正等待被 loop 消费的 steering UserMessage。
-
-因此 `steer` 的作用不是“排队”这么泛。
-
-它定义：
-
-> **这条输入属于当前正在进行的工作，并且要在下一个正常决策点生效。**
-
----
-
-## 7.2 `followUp`：当前工作先做完，再开始下一项
-
-用户也可能说：
-
-> “做完这个以后，再给我写一段摘要。”
-
-它不应该改变当前决策。
-
-这就是 `followUp`。
-
-内部路径：
-
-```text
-followUp(text)
-→ _queueFollowUp()
-→ _followUpMessages.push(text)
-→ queue_update
-→ agent.followUp(UserMessage)
-```
-
-AgentLoop 原本准备自然结束时，会检查：
-
-```text
-getFollowUpMessages()
-```
-
-如果发现 follow-up：
-
-```text
-原本要结束
-→ 取出 follow-up
-→ 再进入下一轮工作
-```
+这条消息最终会在下一个合适的决策边界进入 Current Model Context。
 
 所以：
 
-```text
-steer
-= 当前工作中的方向修正
-
-followUp
-= 当前工作结束后的追加任务
-```
+> **steer = 当前工作的方向修正。**
 
 ---
 
-## 7.3 `queue_update` 为什么有必要
+## 7.2 `followUp`：当前工作先结束，再处理下一项
 
-如果 runtime 只在内部排队，UI 会不知道：
+如果用户说：
 
-- 用户刚才的输入是否已接收；
-- 是 steering 还是 follow-up；
-- 还有多少内容待处理。
+> “做完以后，再给我写个摘要。”
 
-因此 AgentSession 在队列变化时发：
+这不应该改变当前工作。
+
+`followUp()` 会把输入排到当前 Agent 自然结束之后。
+
+Agent 原本要结束时，再检查 follow-up queue；有内容就开始下一项。
+
+所以：
+
+> **followUp = 当前工作完成后的追加任务。**
+
+---
+
+## 7.3 `queue_update`：为什么产品层也要知道
+
+AgentSession 还维护：
+
+```text
+_steeringMessages
+_followUpMessages
+```
+
+并在变化时发：
 
 ```text
 queue_update
 ```
 
-把当前 steering / followUp 状态暴露给产品层。
+这样 UI 才知道：
 
-这里 Queue 才算讲完整：
+- 输入已被接收；
+- 是当前方向修正还是后续任务；
+- 还有多少内容待处理。
 
-```text
-用户输入
-→ 明确时序语义
-→ 进入相应队列
-→ runtime 在正确阶段消费
-→ UI 能观察状态
-```
+到这里 Queue 解决的是“输入时序”。
 
-现在长期工作可以接收中途输入了。
+唯一下一问：
 
-但继续运行几十轮后，会碰到另一个完全不同的问题：
-
-> **历史可以无限增长，但模型 Context Window 不能无限增长。怎么办？**
-
-这才轮到 Compaction。
+> **即使输入时序解决了，Work History 越来越长，Current Model Context 装不下怎么办？**
 
 ---
 
-# 8. Compaction：保存完整历史，不等于每次都把完整历史发给模型
+# 8. Compaction：Work History 可以很长，但 Current Model Context 不能无限长
 
-SessionManager 可以保留越来越长的工作历史。
+这里先重新接回第 5～6 章建立的两个 canonical term：
 
-但模型每次请求都有 Context Window。
+> **Work History** 是完整、可追溯的工作记录。  
+> **Current Model Context** 是某一次模型请求真正看到的内容。
 
-所以迟早会出现：
+前面之所以把两者分开，就是因为它们迟早会出现长度矛盾：
 
 ```text
-完整工作历史
->
-模型可接受 Context
+Work History 持续增长
+↓
+模型 Context Window 有上限
 ```
 
-最简单的办法是删除旧消息。
+这正是 Compaction 要解决的问题。
 
-但被删除的内容可能包含：
+---
+
+## 8.1 为什么不能直接删除 Work History
+
+最粗暴的方案是删老消息。
+
+但旧内容可能包含：
 
 - 用户长期目标；
 - 关键约束；
-- 已验证事实；
+- 之前确认的事实；
 - Tool Result；
 - 重要决策。
 
-直接删会让 Agent 丢失工作状态。
+直接删 Work History，会损坏可追溯性，也可能让后续无法 Resume 或解释过去发生了什么。
 
-因此 Pi 引入 Compaction。
+因此 Compaction 的目标不是：
+
+> 删除 Work History。
+
+而是：
+
+> **让更长的 Work History 能以更短的形式投影成 Current Model Context。**
 
 ---
 
-## 8.1 CompactionEntry 表达的不是“删除”，而是“替代表示”
+## 8.2 CompactionEntry：为什么压缩本身也要成为 Work History 的一部分
 
-SessionManager 的 `CompactionEntry` 会记录例如：
+`CompactionEntry` 会记录例如：
 
 ```text
 summary
 firstKeptEntryId
 tokensBefore
 systemMessage
-details
-usage
+details / usage
 ```
 
 它表达：
 
-> 较早的一段历史，后续不再逐条进入模型 Context，而由 summary 代表；从某个 entry 往后的新内容继续保留明细。
+> 较早的一段 Work History，后续构建 Current Model Context 时由 summary 代表；从 `firstKeptEntryId` 往后的内容继续保留明细。
 
-因此：
+这里没有出现一个新的“Session history”概念。
 
-```text
-完整 Work History
-```
-
-仍然存在。
-
-但：
+仍然只有前面定义过的：
 
 ```text
+Work History
 Current Model Context
 ```
 
-可以更短。
+为什么 CompactionEntry 自己也要 append 到 Work History？
+
+因为如果只把当前 `messages[]` 原地替换掉，那么恢复 Session 时会失去：
+
+- 什么时候发生过压缩；
+- 压缩前大约多长；
+- 哪段旧内容由 summary 代表；
+- 从哪里继续保留明细。
+
+把 Compaction 作为 Work History 中的正式 entry，SessionManager 以后才能重新构建同样的 Current Model Context。
+
+所以：
+
+```text
+完整 Work History
+仍保留可追溯事实
+
+CompactionEntry
+记录“如何压缩投影”
+
+Current Model Context
+使用压缩后的表示
+```
+
+这是 Compaction 与 SessionManager 的真正协作关系。
 
 ---
 
-## 8.2 为什么 Compaction 要进入 Session history
+## 8.3 Compaction 什么时候触发
 
-如果只把 `messages[]` 原地替换成 summary，会丢掉：
-
-- 什么时候压缩；
-- 压缩前多少 token；
-- 从哪里开始保留明细；
-- 原始历史是什么。
-
-Pi 把 compaction 自己也 append 成 SessionEntry。
-
-这样 Resume 时可以重新知道：
-
-> 当前 Context 为什么是这个样子。
-
-这延续了 SessionManager 的 append-only 思路。
-
----
-
-## 8.3 Compaction 什么时候发生
-
-Pi 区分至少三种 reason：
+Pi 区分：
 
 ```text
 manual
@@ -1207,36 +1020,30 @@ threshold
 overflow
 ```
 
-**manual**：主动要求压缩。  
-**threshold**：上下文达到自动压缩阈值。  
-**overflow**：Provider 已经因为 Context 超限失败，需要恢复。
+- `manual`：显式触发；
+- `threshold`：达到自动压缩阈值；
+- `overflow`：Provider 已经因为 Context 超限失败，需要恢复。
 
-所以 Compaction 不只是“节省 token”。
+所以 Compaction 既服务长期工作，也服务 overflow recovery。
 
-它也是长期 Session 的连续性机制。
+Context 长度问题解决了。
 
-现在 Context 长度问题解决了。
+唯一下一问：
 
-但 Provider 还会发生另一类问题：
-
-> **如果一次请求只是临时失败，整段工作是不是就应该结束？**
-
-这才进入 Retry。
+> **如果失败不是 Context 太长，而只是一次 Provider 临时失败，整段工作还要不要继续？**
 
 ---
 
-# 9. Retry / Recovery：一次请求失败，不等于整段 Session 失败
+# 9. Retry / Recovery：一次请求失败，不等于整个工作失败
 
-Provider 调用可能因为：
+Provider 可能因为：
 
-- 临时网络错误；
+- 临时网络异常；
 - Rate limit；
 - transient provider error；
 - overflow；
 
 失败。
-
-如果任何一次底层请求失败都直接把整个工作标记为完成，长任务会非常脆弱。
 
 AgentSession 因此维护自动恢复状态，例如：
 
@@ -1246,31 +1053,29 @@ _retryAttempt
 _failedResponse
 ```
 
-并产生：
+并暴露：
 
 ```text
 auto_retry_start
 auto_retry_end
 ```
 
-事件。
-
 ---
 
-## 9.1 `agent_end` 和 `agent_settled` 为什么不是一回事
+## 9.1 `agent_end` 为什么还不是整段工作的结束
 
-底层 Agent run 结束时会出现：
+底层一次 Agent run 结束时会出现：
 
 ```text
 agent_end
 ```
 
-但 Session 层此时仍可能：
+但 Session 层可能还要：
 
-- 自动 retry；
-- 做 overflow compaction；
+- auto retry；
+- overflow compaction；
 - 处理 queued work；
-- 根据 lifecycle 继续运行。
+- 做其他 Session-level continuation。
 
 所以：
 
@@ -1279,114 +1084,97 @@ agent_end
 = 一次 low-level run 结束
 
 agent_settled
-= Session 已确定不会再自动继续
+= 当前 Session 已确定不会再自动继续
 ```
 
-如果 HMBuddy UI 在 `agent_end` 就把 Busy 状态改成 Done，可能过早。
+这对产品状态很重要。
 
-真正需要“完全空闲”语义时，应关注：
-
-```text
-agent_settled
-```
+HMBuddy UI 如果在 `agent_end` 就显示 Done，可能过早。
 
 ---
 
-## 9.2 为什么不能让 HMBuddy runner 自己盲目 retry `prompt()`
+## 9.2 Provider Retry 和 Domain Action Retry 为什么必须分开
 
-看起来可以写：
+不能简单在 runner 里：
 
 ```text
-try {
-  session.prompt(...)
-} catch {
-  session.prompt(...)
-}
+prompt 失败
+→ 再 prompt 一次
 ```
 
-但这可能重新执行已经产生副作用的动作。
+因为上一轮可能已经执行过有副作用的 Tool。
 
-未来如果 Tool 是：
+例如：
 
 ```text
-修改文件
+写文件
 发送邮件
 提交业务
 ```
 
-重复 Prompt 可能导致重复执行。
+盲目重放用户 Prompt 可能重复动作。
 
-所以必须区分：
+所以：
 
 ```text
 Pi Provider Retry
-```
-
-和：
-
-```text
+≠
 HMBuddy Domain Action Retry
 ```
 
-它们不是一回事。
+前者是 Session / Provider runtime 的恢复问题。
 
-到这里，一个 Session 已经能够：
+后者是具体领域 Action 是否具有幂等性、是否允许重复执行的问题。
 
-- 保留历史；
-- 分支；
-- 接收中途输入；
-- 压缩 Context；
-- 从部分 Provider failure 中恢复。
+到这里，我们已经把 Pi 自己如何维持长期 Agent 工作讲清。
 
-新的问题已经不再是“怎样持续运行”。
+现在出现的是另一类问题：
 
-而是：
+> **一个具体产品怎样把自己的领域能力接入 Pi，而不修改这些已经稳定的 runtime 机制？**
 
-> **HMBuddy 怎样把自己的 Office / Banking 能力接进 Pi，又不去修改 Pi 内部 runtime？**
-
-这才轮到 Extension。
+这才进入 Extension。
 
 ---
 
-# 10. Extension：产品怎样扩展 Pi，而不是重新拥有 Pi
+# 10. Extension：从 Pi 通用 runtime 过渡到产品能力
 
-HMBuddy 需要加入：
-
-```text
-read_office_file
-search_office_content
-银行权限
-审计
-敏感操作确认
-内部系统连接
-```
-
-一个直接但糟糕的办法是：
+先明确到目前为止我们建立的通用结论：
 
 ```text
-修改 agent-loop.ts
-修改 agent-session.ts
+Pi 已经负责：
+Tool execution
+AgentLoop
+Work History / Context projection
+Queue
+Compaction
+Retry / Recovery
 ```
 
-每加一种产品能力就改上游。
+这些都是“Agent 如何运行”的通用问题。
 
-这样 HMBuddy 很快就会变成长期 fork。
+一个产品真正不同的地方，通常不是它需要另一套 AgentLoop，而是：
 
-Pi 提供 Extension runtime，就是让产品通过公开扩展面加入能力。
+> **它需要让 Agent 拥有不同的领域 Action。**
+
+Pi 为此提供 Extension seam。
+
+Extension 的目的就是：
+
+> **产品可以增加 Tool、lifecycle handler、UI integration 等能力，而不修改 Pi 核心 runtime。**
 
 ---
 
-## 10.1 `registerTool()`：把领域动作加入 Agent Action Space
+## 10.1 `registerTool()`：先理解通用能力，不急着跳 HMBuddy
 
-HMBuddy Extension 可以：
+Extension 可以通过：
 
 ```text
 pi.registerTool(...)
 ```
 
-注册 `read_office_file`。
+注册领域 Tool。
 
-ToolDefinition 可以描述：
+ToolDefinition 可以包含：
 
 ```text
 name
@@ -1400,33 +1188,15 @@ annotations
 execute()
 ```
 
-对于 HMBuddy：
+所以 `registerTool()` 的通用意义是：
 
-```text
-parameters
-→ path
+> **把一个产品领域 Action 接入 Pi 已经存在的 Tool runtime。**
 
-outputSchema
-→ OfficeReadResult
-
-annotations.readOnlyHint
-→ true
-
-execute()
-→ TS Office Bridge
-```
-
-所以 Extension Tool 不是“一个回调”。
-
-它是：
-
-> **HMBuddy 领域能力与 Pi Tool runtime 之间的正式 Action Contract。**
+注意，这里仍然是在讲 Pi 通用机制。
 
 ---
 
-## 10.2 registered、active、callable 为什么要区分
-
-Tool 被注册，不代表一定直接暴露给模型。
+## 10.2 registered、active、callable：实现存在，不等于模型现在拥有它
 
 Pi 区分：
 
@@ -1446,125 +1216,189 @@ deferred
 hidden
 ```
 
-这说明：
+因此：
 
-> **代码库里存在某个 Tool，和当前模型拥有这个 Action，是两件不同的事。**
+```text
+Tool implementation exists
+≠
+Current model can see this Action
+```
 
-这对未来银行权限尤其重要。
+这为不同产品留下了动态能力控制空间。
 
-某个实现可以存在，但根据：
+到这里，Extension 的通用机制已经讲完。
 
-- 用户；
-- 工作区；
+现在才做一次明确的 Abstract → Concrete Transition。
+
+---
+
+# 11. 从 Pi Extension 到 HMBuddy：领域差异到底是什么
+
+刚刚建立的通用结论是：
+
+> Pi Extension 给产品留下了一个公开位置，用来增加领域 Action，而不重新拥有 Agent runtime。
+
+现在回到 HMBuddy。
+
+HMBuddy 与普通 coding agent 的主要差异，不是它需要：
+
+```text
+另一套 AgentLoop
+另一套 SessionManager
+另一套 ToolRegistry
+```
+
+而是它需要真正理解和操作：
+
+```text
+DOCX
+XLSX
+PPTX
+PDF
+OCR
+Office / WPS
+银行办公规则
+```
+
+因此，HMBuddy 在 Pi Extension seam 上最自然的第一项领域 Action 就是：
+
+```text
+read_office_file
+```
+
+这就是从“Pi 通用 Extension”到“HMBuddy 具体 Tool”的桥。
+
+---
+
+## 11.1 `read_office_file` 怎样映射到 ToolDefinition
+
+对 HMBuddy：
+
+```text
+name
+→ read_office_file
+
+parameters
+→ { path: string }
+
+annotations.readOnlyHint
+→ true
+
+outputSchema
+→ OfficeReadResult schema
+
+execute()
+→ TypeScript Office Bridge
+```
+
+这里 `execute()` 不自己解析 DOCX。
+
+它继续把领域动作交给：
+
+```text
+TS Office Bridge
+→ Python Office Runtime
+→ DOCX reader
+```
+
+所以 HMBuddy 接入 Pi 的边界是：
+
+```text
+Pi Tool runtime
+↓
+HMBuddy Tool adapter
+↓
+Office capability
+```
+
+而不是在 Pi 外再建第二套 Agent framework。
+
+---
+
+## 11.2 为什么 Tool 是否 active 对 HMBuddy 也重要
+
+前面 Pi 已经区分：
+
+```text
+registered
+active
+callable
+```
+
+映射到 HMBuddy 后，它意味着：
+
+> `read_office_file` 的实现可以存在，但不代表当前用户、当前工作区、当前任务一定应该看到它。
+
+以后可以根据：
+
 - 权限；
-- 当前任务；
+- Workspace；
+- 文件类型；
+- 银行 policy；
 
-决定是否进入 model-facing Action Space。
+决定 Action 是否暴露给模型。
 
----
+这里我们没有重新定义 active。
 
-## 10.3 `bindExtensions()`：Extension 不是 import 完就结束
-
-Extension 还会跟随 Session lifecycle。
-
-`session.bindExtensions()` 会把当前 Session 所需 bindings 注入 Extension runtime，并触发例如：
-
-```text
-session_start
-```
-
-Extension 因而可以在会话生命周期中：
-
-- 注册 / 调整 Tool；
-- 监听 Tool Call；
-- 接入 UI；
-- 连接外部资源；
-- 维护自己的 Session state。
-
-所以 Extension 真正解决的是：
-
-```text
-Pi 保持 Agent runtime ownership
-+
-HMBuddy 仍然能注入领域能力
-```
-
-现在所有核心部件都已经有了。
-
-最后只剩一个组装问题：
-
-> **Model、SessionManager、ResourceLoader、Tools、Extensions、底层 Agent，这些东西是谁在程序启动时拼成一个可工作的 Session？**
-
-到这里才应该看 `createAgentSession()`。
+只是把前面 Pi 的通用概念映射到 HMBuddy 的产品场景。
 
 ---
 
-# 11. `createAgentSession()`：前面所有机制的 Composition Root
+# 12. `createAgentSession()`：最后才看这些机制怎样被组装起来
 
-如果文章一开始就列：
+到这里，读者已经知道为什么需要：
 
 ```text
-ModelRuntime
-SettingsManager
+Model
+Tools
+AgentLoop
 SessionManager
-ResourceLoader
-Agent
-AgentSession
+Queue
+Compaction
+Retry
+Extensions
 ```
 
-读者只会得到一串名字。
+现在再看：
 
-现在再看它们，意义不同。
+```text
+createAgentSession()
+```
 
-我们已经知道为什么分别需要：
+它就不再是一串陌生依赖。
 
-- Model；
-- Tool runtime；
-- Session history；
-- Resources；
-- Extensions；
-- low-level Agent；
-- Session orchestration。
+它是 Composition Root：
 
-`createAgentSession()` 做的是：
-
-> **把这些已经有清楚职责的部件组合成真正可运行的一段 AgentSession。**
+> **把前面已经建立的 runtime responsibilities 组装成一段真正可工作的 AgentSession。**
 
 ---
 
-## 11.1 先确定运行环境
+## 12.1 它先准备运行环境
 
-它解析：
+包括：
 
 ```text
 cwd
 agentDir
-```
-
-并准备：
-
-```text
 ModelRuntime
 SettingsManager
 SessionManager
 ResourceLoader
 ```
 
-如果没提供 ResourceLoader，就创建 `DefaultResourceLoader` 并 `reload()`。
-
-这决定当前项目资源、配置、Skill、Extension 从哪里来。
+如果没传 ResourceLoader，会创建 `DefaultResourceLoader` 并 reload。
 
 ---
 
-## 11.2 再恢复已有 Session
+## 12.2 它恢复既有工作
 
-它调用：
+通过：
 
 ```text
 sessionManager.buildSessionContext()
 ```
 
-拿到已有：
+恢复已有：
 
 ```text
 messages
@@ -1572,17 +1406,13 @@ thinkingLevel
 model
 ```
 
-如果是恢复 Session，就尝试恢复之前的 Model 与 Thinking 状态。
-
-这说明 Session 创建不是“从零 new 一次”这么简单。
-
-它可能是在恢复一段已有工作。
+所以创建 Session 也可能是在恢复已有 Work History 的当前运行状态。
 
 ---
 
-## 11.3 再确定初始 Tool loadout
+## 12.3 它计算初始 Tool loadout
 
-Pi 根据：
+结合：
 
 ```text
 tools
@@ -1591,15 +1421,11 @@ excludeTools
 settings defaultTools
 ```
 
-计算初始 active Tool 集合。
-
-这直接决定：
-
-> 第一轮模型能看到哪些 Action。
+确定第一轮模型真正看到哪些 Action。
 
 ---
 
-## 11.4 创建底层 Agent，再包装成 AgentSession
+## 12.4 它创建底层 Agent，再包装为 AgentSession
 
 底层 Agent 获得：
 
@@ -1608,10 +1434,9 @@ settings defaultTools
 - tools；
 - stream function；
 - context transform；
-- queue hooks；
-- turn lifecycle hooks。
+- queue / turn hooks。
 
-之后再被包装进 AgentSession，与：
+然后 AgentSession 再与：
 
 ```text
 SessionManager
@@ -1621,36 +1446,33 @@ ModelRuntime
 Extension runtime
 ```
 
-协作。
+组合。
 
 所以：
 
 ```text
-前面的问题链
-解释了“为什么需要这些部件”
+前文解释：
+为什么这些机制分别存在
 
-createAgentSession()
-解释“这些部件怎样真正被装起来”
+createAgentSession() 解释：
+它们如何成为一段实际运行的 Session
 ```
 
 ---
 
-# 12. 回到 HMBuddy：VNext-01 真正需要实现什么
+# 13. 现在再看 HMBuddy VNext-01 的完整链
 
-现在 Pi 的边界已经可以从前面的推导直接得到。
+经过前面的推导，Pi 与 HMBuddy 的 ownership 已经自然形成。
 
-Pi 已经拥有：
+Pi 负责：
 
 ```text
-模型 Action Space
-Tool lookup
-参数 validation
-执行前 hook
-Tool execution lifecycle
+Tool declaration / execution contract
+lookup / validation / beforeToolCall
 Tool Result normalization
 Observation reinjection
 AgentLoop
-Session history projection
+Work History → Current Model Context
 Queue
 Compaction
 Retry / Recovery
@@ -1658,23 +1480,17 @@ Extension lifecycle
 Session composition
 ```
 
-HMBuddy 不应该重新实现这些通用 Agent 能力。
-
-HMBuddy 真正新增：
+HMBuddy 负责：
 
 ```text
 read_office_file.execute()
-        ↓
-TypeScript Office Bridge
-        ↓
-Python subprocess
-        ↓
-DOCX reader
-        ↓
-OfficeReadResult
+→ TypeScript Office Bridge
+→ Python Office Runtime
+→ DOCX reader
+→ OfficeReadResult
 ```
 
-完整运行链因此是：
+完整运行：
 
 ```text
 用户目标
@@ -1683,27 +1499,25 @@ OfficeReadResult
 ↓
 模型产生 Tool Call
 ↓
-Pi 找 Tool
+Pi lookup
 ↓
-Pi 校验参数
+Pi validation
 ↓
-Pi 运行 beforeToolCall
+Pi beforeToolCall
 ↓
-Pi 调 Tool execute
+HMBuddy Tool execute
 ↓
-HMBuddy TS Bridge
-↓
-Python 读 DOCX
+Office Bridge / Python / DOCX
 ↓
 Tool Result
 ↓
-Pi 把 Observation 放回 Context
+Observation 回到 Current Model Context
 ↓
 AgentLoop 再请求模型
 ↓
-模型形成最终回答
+最终回答
 ↓
-Session 层处理可能的 queued work / recovery
+Session 层处理 queued work / recovery
 ↓
 agent_settled
 ```
@@ -1712,131 +1526,81 @@ agent_settled
 
 > **Pi 会 Agent；HMBuddy 会银行办公**
 
-不再是先验口号。
-
-它是整篇问题链推导出来的 ownership 结论。
+不是预设 slogan，而是前文一步步推导出的 ownership 结论。
 
 ---
 
-# 13. 用真实 HMBuddy 场景从头走一次
+# 14. 三个变化，检查长程 mental model 是否还连得上
 
-用户：
+## 变化一：模型调用不存在的 Tool
 
-> “阅读 `evals/fixtures/vnext/sample.docx`。告诉我项目编号、负责人、Runtime。”
-
-第一轮模型拥有：
-
-```text
-用户目标
-+
-read_office_file Tool declaration
-```
-
-模型决定：
-
-```text
-read_office_file(
-  path = "evals/fixtures/vnext/sample.docx"
-)
-```
-
-Pi 的执行层：
-
-```text
-lookup
-→ 找到 read_office_file
-
-schema
-→ path 是 string
-
-beforeToolCall
-→ 允许读取
-
-execute
-→ HMBuddy Office Bridge
-```
-
-Python 返回：
-
-```text
-HM-VNEXT-001
-林海
-Pi + Python
-```
-
-Pi 把这个结果变成 ToolResultMessage，放回 Context。
-
-AgentLoop 发起下一次模型请求。
-
-模型现在看到：
-
-```text
-用户问题
-+
-自己的 Tool Call
-+
-真实文件内容
-```
-
-于是返回最终回答。
-
-如果没有 queued work，也不需要 recovery，Session 最后进入：
-
-```text
-agent_settled
-```
-
----
-
-# 14. 再看三个变化，检验 mental model 是否真的建立
-
-## 变化一：模型调用了不存在的 Tool
-
-第一处失败发生在：
+第一处失败：
 
 ```text
 Tool lookup
 ```
 
-不会进入 HMBuddy Python。
-
-所以排错不应该先查 DOCX parser。
+所以不应该先查 Python parser。
 
 ---
 
 ## 变化二：用户中途说“先看现金流”
 
-这不是 Tool execution 问题。
-
-它属于：
-
-```text
-Session queue semantics
-```
-
-如果希望影响当前工作，应进入 `steer`。
-
----
-
-## 变化三：运行几十轮后 Context 过大
-
-这不是 AgentLoop “循环太多”的 bug。
-
 问题属于：
 
 ```text
-Session history
-→ Context projection
-→ Compaction
+Queue semantics
 ```
 
-这三个判断能直接验证你是否真的知道每层负责什么。
+如果要影响当前工作，应考虑 `steer`。
 
 ---
 
-# 15. 最终 Mental Model
+## 变化三：运行很久后 Context 太长
 
-现在才压缩概念。
+重新调用前面的 canonical terms：
+
+```text
+Work History
+仍然可以完整保留
+
+Current Model Context
+不能无限增长
+```
+
+所以问题落在：
+
+```text
+Compaction + Session projection
+```
+
+而不是“AgentLoop 循环次数太多”。
+
+---
+
+# 15. Canonical Concept Map
+
+这张表不是替代正文，而是确认全文术语没有漂移。
+
+| Canonical Term | 本文固定含义 |
+|---|---|
+| Tool declaration | 模型可见的 Action Contract |
+| Tool implementation | 真正执行动作的程序实现 |
+| Tool Call | 模型给出的结构化 Action Intent |
+| Tool Result | 一次 Tool execution 的标准程序结果 |
+| Observation | 从 Agent 决策视角看 Tool Result 带来的新信息 |
+| AgentLoop | 让 Observation 重新进入 Decision 的 run-level 控制循环 |
+| Work History | 一段工作的完整、可追溯记录 |
+| Session Tree | Pi 用 append-only entries 表示 Work History 分支的结构 |
+| Current Branch | Session Tree 中当前 leaf 对应的工作路径 |
+| Current Model Context | 某一次模型请求真正看到的内容 |
+| SessionManager | 从 Work History 重建 Current Branch 与 Current Model Context 的 authority |
+| AgentSession | 组织长期 Agent 工作的 session-level orchestration |
+| Extension | 产品向 Pi 注入领域 Action / lifecycle 的公开扩展面 |
+
+---
+
+# 16. 最终 Mental Model
 
 ### Tool
 
@@ -1844,62 +1608,57 @@ Session history
 
 ### Tool execution path
 
-> 把模型的 Action Intent 经过 lookup、validation、policy、execute，变成统一结果的受控边界。
-
-### Tool Result
-
-> Action 产生的 Observation，不天然等于最终用户答案。
+> 把 Tool Call 经过 lookup、validation、policy、execute，变成 Tool Result 的受控执行边界。
 
 ### AgentLoop
 
-> 让 Observation 重新进入 Decision，使模型能够基于动作结果继续行动。
+> 让 Tool Result 带来的 Observation 回到模型，使模型能够继续 Decision。
 
 ### SessionManager
 
-> 从 append-only 工作历史、分支和压缩记录中重建当前 canonical model context。
+> 管理完整 Work History 的结构，并重建 Current Branch 和 Current Model Context。
 
 ### AgentSession
 
-> 把一次次 Agent run 组织成长期工作会话，承接 Queue、Compaction、Retry、Extension lifecycle 等 Session concern。
+> 把一次次 Agent run 组织成长期工作，承接 Queue、Compaction、Retry、Extension lifecycle 等 session-level concern。
 
 ### Extension
 
-> 产品通过公开 seam 向 Pi 注入领域 Action 和 lifecycle 行为，而不重新拥有 Agent runtime。
+> 产品通过公开 seam 注入自己的领域 Action，而不重新拥有 Pi runtime。
 
-### `createAgentSession()`
+### HMBuddy
 
-> 把 Model、Resources、Tools、Session state、Extensions 和底层 Agent 组合成可工作的 Session。
+> 在 Pi 的 Extension / Tool seam 上提供 Office 与 Banking capability。
 
 ---
 
-# 16. Deep Read Gate
+# 17. Deep Read Gate
 
-读完后，读者应该能沿因果链回答：
+读完后，读者应该能够连续解释：
 
-1. 为什么普通“宿主读文件 + LLM”不等于 Agent？
-2. 为什么第一步只需要 Tool declaration？
-3. Tool Call 为什么只是 Action Intent？
-4. 为什么必须先 lookup，再 validation？
-5. 为什么参数合法后仍需要 policy hook？
-6. 为什么 execute failure 要规范化为 Tool Result？
-7. 为什么 Tool Result 不等于最终答案？
-8. 为什么 Observation 必须再回模型？
-9. AgentLoop 是在哪个问题出现时才真正必要？
-10. AgentLoop 明确不负责什么？
-11. 为什么一次 run 结束后还需要 Session？
-12. 为什么 Session history 不能只是 mutable `messages[]`？
-13. append-only tree / leaf / branch 分别解决什么？
-14. `buildSessionContext()` 为什么是 Context authority？
-15. `steer` 与 `followUp` 为什么必须分开？
-16. Compaction 为什么不是删历史？
-17. Provider Retry 与 Domain Tool Retry 为什么不是一回事？
-18. `agent_end` 为什么不一定代表整个工作完成？
-19. Extension 为什么是 HMBuddy 的正确接入面？
-20. 为什么 `createAgentSession()` 应该最后理解，而不是最先背？
-21. HMBuddy VNext-01 真正应该实现哪一小段？
+1. 为什么普通“宿主读文件 + LLM”不等于 Agent；
+2. Tool declaration 解决了什么；
+3. Tool Call 为什么不是执行；
+4. lookup / validation / policy 为什么按这个顺序出现；
+5. Tool Result 与 Observation 的关系；
+6. AgentLoop 为什么直到 Observation 回来后才真正需要；
+7. 一次 run 为什么不等于长期工作；
+8. Work History、Session Tree、Current Branch、Current Model Context 分别是什么；
+9. SessionManager 为什么不是简单 history store；
+10. `inMemory()` 改变什么、不改变什么；
+11. `steer` / `followUp` 的时序语义；
+12. Compaction 为什么解决的是 Work History 与 Current Model Context 的失配；
+13. CompactionEntry 为什么属于 Work History；
+14. Retry 为什么是 Session-level recovery；
+15. `agent_end` 与 `agent_settled` 的边界；
+16. Extension 的通用意义；
+17. 为什么从 Extension 映射到 HMBuddy 时首先得到 `read_office_file`；
+18. `registerTool()` 在 Pi 通用机制和 HMBuddy 具体实现中分别意味着什么；
+19. `createAgentSession()` 为什么最后理解最自然；
+20. HMBuddy VNext-01 的 ownership 边界在哪里。
 
-如果读者必须先知道后面几章的概念，才能理解前面某一章，说明 Progressive Disclosure 失败。
+如果文章后半程出现一个词，读者必须翻回多章才能重新猜它是什么，Cognitive Continuity 失败。
 
-如果读者只能说出类名，却说不清输入、状态变化、输出和边界，说明 Mechanism Depth 失败。
+如果从 Pi 机制突然跳到 HMBuddy 代码而没有说明“为什么现在切过去”，Transition Bridge 失败。
 
-只有当这两类失败都不存在，这篇 Deep Read 才通过 Quality Baseline。
+只有四类 Gate 同时通过，这篇 Deep Read 才达到 Quality Baseline。
