@@ -1,958 +1,871 @@
-# HMBuddy × SenseWright Technical Learning Protocol V1.0
+# HMBuddy × SenseWright Learning Orchestration Protocol V1.1
 
-**文档性质：** Canonical Learning Protocol  
-**版本：** V1.0  
+**文档性质：** Project Learning Orchestration Protocol  
+**版本：** V1.1  
 **状态：** Active  
-**生效日期：** 2026-10-03  
-**替代：** HMBuddy × SenseWright D → R → L → P 学习协议 V0.2  
-**架构基线：** HMBuddy Architecture Baseline V1.0 — Pi-native Banking Office Agent
+**生效日期：** 2026-10-04  
+**上游方法基线：** SenseWright V2.7.0  
+**架构基线：** HMBuddy Architecture Baseline V1.0 — Pi-native Banking Office Agent  
+**替代：** HMBuddy × SenseWright Technical Learning Protocol V1.0
 
 ---
 
-# 1. 为什么需要 V1.0
+# 1. 这份文件是什么
 
-V0.2 的主要失败不是 D / R / L / P 方法本身错误，而是执行目标被替换成了“把所有概念快速生成一套结构齐全的四路文档”。
+这份文件不是第五个 Skill，也不重新定义 Deep Read / Review / Learning / Practice。
 
-结果是大量内容退化为：
+它只负责一件事：
 
-- 概念卡片；
-- 架构速查表；
-- bullet summary；
-- 工程 TODO；
-- 给熟悉项目的人看的 reminder。
+> **把 SenseWright 的四种认知模式，正确编排到 HMBuddy 的技术学习场景里。**
 
-它们没有承担“教会一个陌生人”的任务。
+真正的方法定义仍然来自 SenseWright：
 
-SenseWright 原方法要求：
+```text
+D — Deep Read V6.4
+R — Vibe Review V0.10
+L — System Learning V0.5.3
+P — Practice V0.2
+```
 
-> **删除语言冗余，不删除理解过程。**
+因此本文件不应复制或覆盖 SenseWright Skill 的内部实现。
 
-因此 V1.0 把优化目标从“文档是否齐全”改成：
+如果 HMBuddy 学习过程中发现新的质量问题，先判断：
 
-> **一个陌生读者是否已经形成可运行、可解释、可预测、可实施的 mental model。**
+1. 它是否能够映射回 SenseWright 已有的核心原则；
+2. 它是否具有跨主题、跨技术、跨项目的普适性；
+3. 它是否改变了认知任务本身，而不只是修复某一个案例的写作方式。
 
----
+只有满足这些条件，才进入本协议。
 
-# 2. Highest Principle
+否则：
 
-本协议没有：
-
-- 最低篇幅；
-- 最高篇幅；
-- 固定章节数；
-- 固定文件长度；
-- 每个概念必须使用同样模板的要求。
-
-唯一完成条件：
-
-> **An unfamiliar reader can explain the concept, trace one real execution, predict one nearby variation, and begin a real implementation without reconstructing missing steps.**
-
-中文定义：
-
-> **一个概念只有在陌生读者能够解释它、跟踪一次真实运行、预测一个相邻条件变化，并能够开始真实实施，而不需要自行脑补关键步骤时，才算完成。**
-
-篇幅只是理解复杂度的结果，不是质量目标。
+> **把它留在具体 Quality Baseline / Regression Case 中，不升级成 Canonical Rule。**
 
 ---
 
-# 3. 陌生读者是谁
+# 2. 为什么要从 V1.0 再收敛
 
-默认读者：
+V1.0 解决了一个真实问题：
 
-- 会基本编程；
-- 理解函数、API、JSON、进程、测试等通用工程概念；
-- 知道 LLM / Agent 的最基本含义；
-- 没有读过 Pi 源码；
-- 不了解 HMBuddy 当前架构；
-- 不知道当前概念为什么存在、由谁拥有、运行时怎样工作。
+> 旧学习资料为了目录完整，批量生成了大量 D / R / L / P 文档，但很多结果只像概念卡片，不能真正帮助陌生人理解和实施。
 
-因此不能把以下句子当成“已经解释”：
+后续围绕 `Pi AgentSession / Tool Calling Vertical Slice` 的多轮迭代，又发现了：
 
-~~~text
-SessionManager is authoritative.
-Tool Result goes back to Context.
-Extension registers tools.
-Artifact is the IR.
-~~~
+- 文章要有认知推进，而不是源码目录导览；
+- 关键机制不能只点名；
+- 新概念不能一次泄露过多；
+- 长文章需要保持术语和上下文连续；
+- 从通用机制映射到 HMBuddy 时需要明确过桥。
 
-这些只是结论。
+这些发现都有效。
 
-学习材料必须继续回答：
+但如果把每次修复直接固化成新的顶层 Gate，就会产生另一个问题：
 
-~~~text
-为什么需要这个东西？
-没有它会怎样？
-真实入口在哪里？
-一个输入进来后每一步发生什么？
-状态在哪里改变？
-为什么下一步能够继续？
-它和相邻概念有什么区别？
-条件变化后哪些结论还成立？
-真正打开 IDE 后第一步做什么？
-~~~
+> **方法越来越像“为这一篇 Pi 文章定制的写作规范”，而不是一个可以泛化到 RAG、数据库、Office Runtime、业务规则、系统架构等主题的学习协议。**
+
+因此 V1.1 回到 SenseWright 的设计思想：
+
+> **保持认知模式少而稳定；把具体技巧降回各 Skill 的执行策略与 Repair Pattern。**
 
 ---
 
-# 4. Evidence First
+# 3. SenseWright 是 Source of Truth
 
-HMBuddy 已切换为 Pi-native 架构，因此通用 Agent 概念必须优先读取 Pi 的真实实现，而不是从 HMBuddy 旧设计反推。
+HMBuddy 不 fork SenseWright 的认知架构。
 
-## 4.1 Pi-owned concept
+四个模式分别回答四个不同问题：
 
-~~~text
-Pi pinned source / checked tests
-        ↓
-Pi official docs / checked examples
-        ↓
-HMBuddy Architecture / Requirement
-        ↓
-Derived explanation
-~~~
+```text
+D — 我理解原材料了吗？
+R — 这份材料可靠吗、够用吗？
+L — 我真正懂了吗？
+P — 如果现在真的要把它做出来，我该怎么做？
+```
 
-## 4.2 HMBuddy-owned Office concept
-
-~~~text
-HMBuddy current code / tests / fixtures
-        ↓
-Canonical Architecture / Requirement
-        ↓
-Legacy algorithm as reference only
-        ↓
-Derived explanation
-~~~
-
-## 4.3 Source / Derived / Decision 必须分开
-
-**Source fact**：源码、测试、官方文档直接建立的事实。  
-**Derived explanation**：为了让人理解，对事实做的机制解释、类比、抽象。  
-**HMBuddy decision**：HMBuddy 自己选择的实现，例如 Python subprocess、JSONL、10s timeout。
-
-禁止：
-
-- 把推断写成作者动机；
-- 把 HMBuddy 选择写成 Pi 原理；
-- 把 Future architecture 写成 current capability；
-- 把 Legacy contract 写成 VNext contract。
+它们的边界必须保持。
 
 ---
 
-# 5. D / R / L / P 的新职责
+# 4. Context / Evidence Architecture
 
-~~~text
+## 4.1 D / R：Source-facing，彼此隔离
+
+Deep Read 与 Review 都直接读取 Raw Source。
+
+```text
 Raw Source
-   │
-   ├── D：恢复“为什么存在 + 真实怎么工作”，写成人能读懂的技术文章
-   │
-   └── R：重新读 Raw Source，独立检查正确性、边界、风险与隐含假设
-              │
-              ▼
-       L：让机制真的跑起来
-          输入 / 状态 / 数据 / 控制流 / 输出
-          + 为什么每一步存在
-          + 一个高信息量变化
-              │
-              ▼
-       P：把已理解的机制落进真实工程
-          建文件 / 写接口 / 跑测试 / 看 trace
-          + 制造失败 / 排错
-          + 区分原理与项目选择
-~~~
+   ├─→ D
+   └─→ R
+```
 
-D、R、L、P 可以长度完全不同。
+规则：
+
+- D 不读取 R / L / P 结果；
+- R 不读取 D / L / P 结果；
+- D 与 R 不互相继承结论；
+- 两者都可以读取用户对当前任务的直接要求和必要原始上下文。
+
+原因：
+
+> Deep Read 要忠实恢复材料；Review 要独立判断材料。  
+> 如果先读 sibling output，容易把别人的解释当成原文。
 
 ---
 
-# 6. D — Deep Read：Narrative Spine + Progressive Disclosure + Mechanism Depth + Cognitive Continuity
+## 4.2 L / P：Knowledge-facing，可选择性引用
 
-D 的任务不是“把源码讲一遍”，而是：
+Learning 可以选择性参考 D / R / P。
 
-> **让一个没读过源码的人沿一条因果主线理解系统为什么一步步长成现在这样；每一步只引出解决当前问题所必需的最小机制；每个机制下钻到接近需求规格说明书的粒度；同时在长篇阅读中保持术语、已知前提和抽象层级的连续性。**
+Practice 可以选择性参考 D / R / L，其中 L 的 Knowledge Model 通常最重要。
 
-Deep Read 同时受四条规则约束。
+统一遵守 SenseWright 三条规则：
 
-```text
-1. Narrative Spine
-问题
-→ 最小解决
-→ 新问题
-→ 新机制
-→ 最终架构自然出现
-```
+> **Reference ≠ Evidence**  
+> **Transform, don't copy**  
+> **Selective, not mandatory**
 
-```text
-2. Progressive Disclosure
-当前问题
-→ 只引出当前必需机制
-→ 先讲清
-→ 再暴露下一问题
-→ 后续概念才允许登场
-```
-
-```text
-3. Mechanism Depth
-为什么存在
-→ Trigger
-→ Input
-→ Responsibility
-→ State
-→ Output
-→ Collaboration
-→ Failure / Boundary
-→ Source Anchor
-```
-
-```text
-4. Cognitive Continuity
-当前读者已经知道什么
-→ Canonical Term 是什么
-→ 距离上次出现是否过远
-→ 是否需要 Re-entry Bridge
-→ 是否发生 Pi→HMBuddy / Abstract→Concrete 等层级切换
-→ 是否需要 Transition Bridge
-```
-
-四者缺一不可。
+已有输出可以帮助定位重点，但不能替代真实证据。
 
 ---
 
-## A. Narrative Spine：章节顺序必须由问题推动
+## 4.3 HMBuddy 的证据优先级
 
-正文不能优先按源码目录、类定义、方法列表或 API 顺序展开。
-
-必须恢复一条因果链：
-
-```text
-原始矛盾是什么？
-↓
-最简单方案解决了什么？
-↓
-它留下了什么新问题？
-↓
-哪个机制因此必须出现？
-↓
-这个机制解决后，又留下什么问题？
-```
-
-每一主要章节都必须回答：
-
-> **为什么读者此刻必须进入下一章？**
-
-如果下一章只是因为“源码里下一个文件叫这个名字”，Narrative Gate 失败。
-
----
-
-## B. Problem before abstraction
-
-第一次出现一个概念时，先让读者看见具体矛盾，再给概念命名。
-
-不要先写：
-
-```text
-AgentSession 是……
-SessionManager 是……
-Compaction 是……
-```
-
-而应先写出：
-
-```text
-一次 run 已经能 Tool Calling，
-但第二轮继续追问时，上一轮状态由谁负责？
-
-完整工作历史越来越长，
-模型 Context 装不下怎么办？
-```
-
-机制应该是问题逼出来的结果。
-
----
-
-## C. Progressive Disclosure Gate：一次只引出一个认知层
-
-每个“新问题”只能引出解决该问题所必需的最小机制。
-
-例如当前问题只是：
-
-> 模型已经输出 `read_office_file(path=...)`，怎样真正执行？
-
-此时可以引出：
-
-```text
-Tool lookup
-参数校验
-执行前 policy
-Tool execute
-结果规范化
-```
-
-但不能提前引出：
-
-```text
-AgentLoop
-AgentSession
-Compaction
-Retry
-```
-
-这些必须等后续问题自然出现。
-
-### C.1 不允许用未来概念解释当前概念
-
-如果一个概念还没有被推导出来，不能把它当当前解释的前提。
-
-### C.2 Source Location 不等于 Cognitive Order
-
-多个机制写在同一源码文件，不代表文章里应该同时讲。
-
-例如 `agent-loop.ts` 中同时有：
-
-- Tool preparation；
-- Tool execution；
-- Tool Result creation；
-- loop continuation。
-
-正文仍应按：
-
-```text
-一次 Tool 怎样执行
-↓
-Result 为什么回模型
-↓
-为什么形成 Loop
-```
-
-逐层展开。
-
-### C.3 每节结尾只留下清楚的下一问
-
-如果一节结尾一次抛出多个跨层问题，说明 Progressive Disclosure 失败。
-
----
-
-## D. Mechanism Depth：禁止裸机制名
-
-只要一个机制对主线成立是必要的，就不能只出现名字或一句定义。
-
-内部调查至少覆盖：
-
-| 维度 | 必须弄清 |
-|---|---|
-| Purpose | 它解决哪个具体问题 |
-| Trigger | 什么条件进入它 |
-| Input | 接收哪些对象 / 状态 |
-| Responsibility | 内部真正负责什么 |
-| State | 读取、维护、改变什么 |
-| Output | 向后续产生什么 |
-| Collaboration | 上下游分别是谁 |
-| Failure / Boundary | 没有它或失败会怎样 |
-| Source Anchor | 源码 / checked test / docs 在哪里 |
-
-这是作者内部调查清单，不是正文固定模板。
-
----
-
-## E. Cognitive Continuity Gate：长文章必须管理“读者已经知道什么”
-
-长文章不能只保证相邻两节连贯。
-
-作者必须显式维护一个内部 **Concept Ledger**：
-
-```text
-概念 / Canonical Term
-第一次建立的位置
-当前定义
-与相邻概念的关系
-最后一次出现的位置
-是否需要重新进入
-当前是否允许使用
-```
-
-### E.1 Canonical Term Rule：一个概念一个稳定名称
-
-关键概念第一次建立后，必须选定 canonical term。
+### Pi-owned concept
 
 例如：
 
 ```text
-Work History
-= SessionManager 保存的完整、可追溯工作记录
-
-Current Model Context
-= 当前一次模型请求真正看到的上下文
-
-Session Tree
-= append-only entries 组成的分支结构
+AgentLoop
+AgentSession
+SessionManager
+Tool lifecycle
+Extension
+Context / Compaction
+Provider / Model runtime
 ```
 
-后文不能为了语言变化，随意把同一对象改写成：
+优先级：
 
 ```text
-Session history
-conversation history
-full history
-historical state
+Pi pinned source / checked tests
+        ↓
+Pi official docs / examples
+        ↓
+HMBuddy Architecture / Requirement
+        ↓
+Derived explanation
 ```
 
-除非明确说明：
+### HMBuddy-owned concept
 
-> “这里的 Session history 指前文定义的 Work History。”
-
-默认应直接继续使用 canonical term。
-
-### E.2 No Synonym Drift
-
-如果两个词代表同一对象，必须选一个主名称。
-
-如果两个词不完全相同，必须显式说明差异。
-
-禁止让读者自己判断：
+例如：
 
 ```text
-Work History
-Session History
-Session Tree
-Current Branch
-Messages
-Context
+Office Artifact
+DOCX / XLSX / PPTX / PDF
+OCR
+COM
+Artifact Locator / Patch / Diff / Validation
+Banking Skill
+Bank Governance
 ```
 
-到底是不是一回事。
-
-### E.3 Re-entry Bridge：旧概念隔得太远时必须重新接回
-
-如果一个关键概念距离上次正式解释已经跨越多个章节，重新使用前先用 1–3 句恢复它在当前论证中的角色。
-
-例如 Compaction 不能直接写：
-
-> “Compaction 为什么要进入 Session history？”
-
-应先写：
-
-> 前面讲 SessionManager 时，我们建立了两个稳定概念：  
-> **Work History** 是完整工作记录；  
-> **Current Model Context** 是当前请求真正送给模型的内容。  
-> Compaction 现在要解决的，就是两者长度开始失配的问题。
-
-Re-entry Bridge 不重新讲整章，但必须让读者重新找到认知坐标。
-
-### E.4 Reader-State Check：每章开头先检查前置知识
-
-写新章节前内部检查：
+优先级：
 
 ```text
-这一章依赖哪些旧概念？
-它们是否已经正式建立？
-读者最后一次见到它们在哪里？
-是否可能已经失去上下文？
-是否需要一句 re-entry？
+HMBuddy current code / tests / fixtures
+        ↓
+HMBuddy Canonical Architecture / Requirement
+        ↓
+Legacy implementation as reference
+        ↓
+Derived explanation
 ```
 
-如果某个前置概念从未建立，不能直接使用。
+### Mixed concept
 
-### E.5 Transition Bridge：跨抽象层级必须显式过桥
+如果一个主题跨 Pi 与 HMBuddy：
 
-以下切换不能直接跳：
+> 先分 Ownership，再分别取证。
 
-```text
-Pi generic mechanism → HMBuddy concrete implementation
-Abstract principle → code / project mapping
-Runtime internals → Product UX
-Mechanism → Architecture ownership decision
-```
-
-每次切换至少回答：
-
-```text
-刚刚建立了什么通用结论？
-↓
-它留下了哪个扩展位置 / 决策位置？
-↓
-当前项目为什么恰好要在这里接入？
-```
-
-例如从 Pi Extension 切到 HMBuddy：
-
-```text
-Extension 已解决：
-产品如何在不修改 Pi runtime 的前提下加入领域能力
-↓
-HMBuddy 的领域差异是什么：
-Office / Banking capability
-↓
-因此第一个具体映射：
-read_office_file
-```
-
-不能直接从“Extension lifecycle”跳到：
-
-```text
-HMBuddy 通过 registerTool 注册……
-```
-
-### E.6 Concept Reuse ≠ Concept Re-definition
-
-旧概念重新出现时：
-
-- 如果定义没变：只做 Re-entry；
-- 如果作用范围扩大：说明“原定义 + 新增部分”；
-- 如果当前只是举例：不要把例子写成新定义。
-
-避免同一概念在文章后半段悄悄改变含义。
+不要用 HMBuddy 旧实现解释 Pi 原理，也不要把 Pi 通用机制当成 HMBuddy 领域实现。
 
 ---
 
-## F. 需求规格说明书级粒度
+## 4.4 Source / Derived / External 必须可区分
 
-一个关键机制至少要达到：
+学习材料至少能区分：
 
-```text
-为什么需要
-↓
-什么时候进入
-↓
-输入是什么
-↓
-内部状态怎样变化
-↓
-输出是什么
-↓
-上下游如何配合
-↓
-失败会怎样
-↓
-源码 / test 在哪里
-```
+**Source-supported**  
+源码、测试、文档、原始材料直接建立。
 
-但正文仍按文章叙事组织。
+**Derived synthesis**  
+为了理解，对 source fact 做结构化解释、抽象或映射。
 
----
-
-## G. Locate real entry point，但不要让源码入口支配叙事
-
-必须找到真实入口，例如：
-
-```text
-createAgentSession()
-session.prompt()
-pi.registerTool()
-SessionManager.buildSessionContext()
-runLoop()
-```
-
-入口是证据锚点，不是章节排序原则。
-
----
-
-## H. Trace one real call chain
-
-至少跟踪一条具体输入。
-
-第一次出现某一步时，只展开当前已建立的概念。
-
-完整链最终应覆盖：
-
-```text
-用户目标
-→ Tool declaration
-→ Tool Call
-→ lookup / validation / permission / execute
-→ Tool Result
-→ Observation reinjection
-→ next model request
-→ AgentLoop stop
-→ Session-level continuation / recovery
-→ agent_settled
-```
-
----
-
-## I. Preserve cognitive engines
-
-必须保留：
-
-- 关键代码；
-- 真实对象；
-- 数据形态；
-- 状态变化；
-- 对比；
-- 失败例子；
-- checked test；
-- 调用关系；
-- 必要解释冗余。
-
-可以删除语言重复，但不能删除理解桥梁。
-
----
-
-## J. Explain choices carefully
-
-源码 / docs / changelog 有证据时可以说明设计原因。
-
-只有推断时，明确写：
-
-> 从当前实现可以推断……
-
----
-
-## K. Abstract last
-
-只有具体问题、真实路径、关键机制和长期概念关系都已经建立后，才形成：
-
-- 概念定义；
-- ownership；
-- 不变量；
-- 边界；
-- mental model。
-
----
-
-# 7. D Acceptance Gate
-
-D 只有同时通过四类 Gate 才完成。
-
-## 7.1 Narrative Gate
-
-1. 原始矛盾是什么？
-2. 每个主要机制为什么在那个位置出现？
-3. 上一节留下什么问题，逼出下一节？
-4. 调换章节后，因果链是否会断？
-5. 最终架构是否像被问题推导出来？
-
-## 7.2 Progressive Disclosure Gate
-
-1. 当前章节只解决哪个问题？
-2. 本节新概念是否都是当前必需？
-3. 是否提前使用未来概念？
-4. 是否因为源码同文件而混讲多个认知层？
-5. 结尾是否留下一个主要下一问？
-6. 删除未来术语后，本节是否仍成立？
-
-## 7.3 Mechanism Depth Gate
-
-对每个关键机制，读者能否说明：
-
-1. Purpose；
-2. Trigger；
-3. Input；
-4. Responsibility；
-5. State；
-6. Output；
-7. Collaboration；
-8. Failure / Boundary；
-9. Source Anchor。
-
-## 7.4 Cognitive Continuity Gate
-
-逐章检查：
-
-1. 本章使用的每个关键术语是否已经正式建立？
-2. 是否坚持 canonical term，而没有 synonym drift？
-3. 如果旧概念相隔较远，是否提供 Re-entry Bridge？
-4. 是否把 Work History、Session Tree、Current Branch、Messages、Current Model Context 等不同层次混成一个词？
-5. 是否发生 Pi→HMBuddy、Abstract→Concrete、Runtime→Product 等层级切换？
-6. 如果发生，是否有 Transition Bridge？
-7. 旧概念重新出现时，定义是否保持稳定？
-8. 读者是否需要翻回很多页才能知道“这里说的这个词是什么”？
-
-如果读者在后半程遇到一个看似熟悉但无法定位含义的词，Cognitive Continuity Gate 失败。
-
-## 7.5 Whole-article Gate
-
-读者还应能：
-
-- 跟踪完整调用链；
-- 指出关键状态变化；
-- 区分相邻概念；
-- 区分 Source fact / Derived explanation / HMBuddy decision；
-- 对相邻条件变化做预测；
-- 反向解释为什么 Pi 最终需要这些层；
-- 不需要依赖作者脑中的隐含词义映射。
-
-任何关键步骤仍需自行脑补，D 继续展开。
-
----
-# 8. R — Review：独立审阅
-
-R 重新读取 Raw Source，D 只能导航，不能当证据。
-
-R 回答：
-
-> **当前设计 / 理解是否站得住？什么地方会让后续实现、学习或决策出错？**
-
-重点检查：
-
-- ownership 是否读错；
-- public contract 与 private implementation 是否混淆；
-- current / future 是否混淆；
-- Session / Tool / Extension 等边界是否被过度简化；
-- 是否存在改变 HMBuddy 架构的真实限制；
-- 是否遗漏安全、生命周期、错误语义；
-- HMBuddy 是否正在重新实现 Pi 已经拥有的能力。
-
-R 报告只展开 materially 改变理解或行动的发现。
-
----
-
-# 9. L — Learning：从流程复述变成机制实验
-
-对于 Agent / Runtime / RAG / Database / Office Pipeline 等机制型知识，L 必须让机制真正跑一次。
-
-## 9.1 Real input first
-
-选择具体输入，不能写“用户提出请求”。
-
-## 9.2 Executable Trace
-
-至少展示真正决定机制的状态：
-
-~~~text
-输入
-→ session / context
-→ model request
-→ model response / toolCall
-→ tool execution
-→ toolResult / observation
-→ next model request
-→ final answer / stop
-~~~
-
-每一步回答：
-
-- 收到什么；
-- 做了什么；
-- 哪个状态改变；
-- 产生什么；
-- 为什么下一步能够继续。
-
-## 9.3 Explain after the run
-
-跑完再逐步问：
-
-- 为什么必须有这一步？
-- 它解决上一阶段留下的什么问题？
-- 删除它会具体坏在哪里？
-
-## 9.4 One high-information variation
-
-改变一个真正影响行为的条件，例如：
-
-- Tool 被移出 active set；
-- Tool description 变模糊；
-- Session history 丢失；
-- Tool Result 被截断；
-- subprocess 超时；
-- Context 超限；
-- 文件路径越界。
-
-优先真实运行。当前环境不能运行时，必须使用已有真实 test / trace 作为证据，或明确标记 Pending，不得伪造结果。
-
-## 9.5 Mental model last
-
-只有运行与 variation 都看懂后，才压缩成可迁移 mental model。
-
----
-
-# 10. L Acceptance Gate
-
-陌生读者应能：
-
-1. 复述一个真实输入如何跑完整条机制；
-2. 指出主要状态 / 数据 / 控制流变化；
-3. 解释关键步骤为什么存在；
-4. 预测至少一个相邻条件变化；
-5. 区分“模型决定”“Pi runtime 决定”“HMBuddy tool 决定”；
-6. 不靠背流程图也能解释为什么下一步发生。
-
-如果只能记住 Model → Tool → Observation → Model，L 没有完成。
-
----
-
-# 11. P — Practice：必须落到真实工程
-
-P 的任务是从“我理解它了”走到“我打开 IDE 知道第一步做什么，而且知道怎么证明做对”。
-
-## 11.1 优先进入 HMBuddy VNext
-
-对于 Pi-native 概念，Practice 优先选择当前 HMBuddy VNext 的真实需求，不为学习另造无关 Framework。
-
-## 11.2 Real engineering artifacts
-
-根据场景真实创建或明确指向：
-
-- 文件；
-- 模块；
-- interface / schema；
-- fixture；
-- test；
-- command；
-- trace；
-- compatibility record。
-
-不能停在“实现 Tool、增加测试、记录日志”。
-
-## 11.3 Run a real path
-
-至少一个 concrete input 从入口跑到最终输出。
-
-如果当前环境无法执行：
-
-- 可以引用上游 checked test 作为 mechanism evidence；
-- HMBuddy 尚未运行的部分必须标记 Pending；
-- 不把“可执行设计”写成“已验证实现”。
-
-## 11.4 Manufacture one failure
-
-至少主动制造一个高信息量失败，并展示：
-
-~~~text
-现象
-→ 首先检查哪里
-→ 根因
-→ 修复
-→ 如何证明修复有效
-~~~
-
-## 11.5 Principle vs Project Choice
-
-最后必须拆开：
-
-**Upstream / Concept principle**  
-**HMBuddy implementation choice**
-
-这样才形成可迁移能力。
-
----
-
-# 12. P Acceptance Gate
-
-P 只有在读者能够回答以下问题时完成：
-
-1. 真正应该创建哪些工程对象？
-2. 第一步具体做什么？
-3. 接口 / schema 是什么？
-4. 一个输入如何跑完整条实现？
-5. 用什么测试证明成功？
-6. 最有价值的失败如何复现和定位？
-7. 哪些行为来自 Pi，哪些来自 HMBuddy？
-8. 换 Office 格式 / Provider / UI 后，哪些部分仍成立？
-
-如果仍然是“原理懂了，但打开 IDE 不知道干什么”，Practice 未完成。
-
----
-
-# 13. Status Semantics
-
-文档存在不等于学习完成。
-
-每个概念可以标记：
-
-~~~text
-DRAFT
-SOURCE-GROUNDED
-MECHANISM-VALIDATED
-PRACTICE-VALIDATED
-QUALITY-BASELINE
-~~~
-
-- DRAFT：正在形成；
-- SOURCE-GROUNDED：D/R 通过 source gate；
-- MECHANISM-VALIDATED：L 有真实 execution evidence；
-- PRACTICE-VALIDATED：P 有真实工程执行 / 测试 / failure evidence；
-- QUALITY-BASELINE：四阶段均达到陌生人可理解标准，可作为样板。
-
-如果 HMBuddy 实现尚未运行，P 可以 Pending，不得提前标记 PRACTICE-VALIDATED。
-
----
-
-# 14. 禁止批量生成
+**External extension / Project choice**  
+为了实施或补充，引入新的工程选择、外部事实或当前项目决策。
 
 禁止：
 
-~~~text
-23 concepts × D/R/L/P
-一次性批量完成
-~~~
+- 把推断写成作者动机；
+- 把 HMBuddy choice 写成 Pi invariant；
+- 把 Future design 写成 Current capability；
+- 把 Legacy behavior 写成 VNext contract。
 
-正确节奏：
+---
 
-~~~text
-Concept A
-→ D
-→ R
-→ L
-→ P
+# 5. Full Learning Track
+
+当一个概念需要完整学习时，默认采用：
+
+```text
+Raw Source
+   ├─────────────┐
+   ▼             ▼
+Deep Read       Review
+   D             R
+[isolated]     [isolated]
+   │             │
+   └──────┬──────┘
+          │ optional references
+          ▼
+       Learning
+          L
+          │
+          │ Knowledge Model
+          ▼
+       Practice
+          P
+          │
+          │ Implementation Gap
+          └──────────────→ Learning
+```
+
+注意：
+
+> **D → R → L → P 是学习路径，不是信息继承链。**
+
+D / R 仍然独立读取 Raw Source。
+
+L 才可以选择性吸收 D / R。
+
+P 主要把已经形成的 Knowledge Model 编译成 Engineering Model。
+
+---
+
+# 6. D — Deep Read：忠实恢复技术材料的认知结构
+
+HMBuddy 不再为 Deep Read 维护一套平行方法。
+
+直接继承 SenseWright Deep Read V6.4：
+
+```text
+Raw Source
+→ Restore Cognitive Topology
+→ Identify Cognitive Units / Engines
+→ Choose Compression Contract
+→ Deliverable
 → Acceptance Gate
-→ 修复
-→ Quality Review
-→ 再进入 Concept B
-~~~
+→ Repair Loop
+```
 
-复杂概念耗时远高于简单概念是正常的。
+核心原则：
 
----
+> **先恢复材料自己的认知结构，再决定哪些信息允许消失。**
 
-# 15. First Quality Baseline
-
-第一份样板固定为：
-
-> **Pi AgentSession / Tool Calling Vertical Slice**
-
-路径：
-
-~~~text
-learning/sensewright-drlp/00-quality-baseline-pi-agentsession-tool-calling/
-~~~
-
-样板通过前：
-
-- 不重写旧 23 个概念；
-- 不新建新的完整概念地图；
-- 不以文件数量衡量学习进度。
-
-后续概念必须至少达到同等：
-
-- source grounding；
-- human comprehensibility；
-- execution visibility；
-- mechanism depth；
-- engineering specificity；
-- epistemic honesty。
+> **删除语言冗余，不删除理解过程。**
 
 ---
 
-# 16. Current architecture rule
+## 6.1 Technical Source Profile
 
-2026-10-03 起：
+技术源码 / 架构材料有几个常见特征：
 
-- Pi owns generic Agent runtime；
-- HMBuddy owns Office / Banking domain；
-- 旧 V0.2 SessionStore / AgentLoop / ToolRegistry / ExtensionHost 学习材料属于 Legacy；
-- 学习这些概念时，应读 Pi 的真实实现，而不是继续设计 HMBuddy 自研版本。
+- 认知结构不一定等于目录结构；
+- 真实设计逻辑可能分散在 source、test、docs、examples；
+- 一个类名或方法名本身通常不足以帮助陌生人理解；
+- 关键机制需要通过调用关系、状态变化、失败行为才能看清。
 
-Office Domain 仍由 HMBuddy 深入学习：
+因此对技术材料执行 Deep Read 时，优先做三件事。
 
-~~~text
-DOCX / XLSX / PPTX / PDF
-OCR / COM
-Artifact / Locator
-Patch / Version / Diff
-Validation
-Banking Skills
-Governance
-~~~
+### A. Restore Cognitive Topology
+
+恢复的是：
+
+> **问题、机制、依赖、控制权、状态与边界之间的真实关系。**
+
+而不是机械按：
+
+```text
+file A
+→ class B
+→ method C
+```
+
+讲解。
+
+如果材料真实结构表现为：
+
+```text
+问题
+→ 机制
+→ 新约束
+→ 下一机制
+```
+
+输出可以跟随这条认知推进。
+
+如果材料本身是并列模块或多主题结构，也应保留多分支，不为了“故事感”强行制造单线叙事。
 
 ---
 
-# 17. 最终原则
+### B. Preserve Cognitive Engines
 
-> **学习材料不是给已经懂的人做索引，而是替陌生读者承担理解成本。**
+技术材料中的“认知发动机”可能是：
 
-> **模板可以帮助执行 Skill，但不能替代真实解释。**
+- 一个真实调用链；
+- 一段决定控制权的代码；
+- 一个关键状态转换；
+- 一组 schema / contract；
+- 一个 checked test；
+- 一个失败案例；
+- 一个前后设计对比；
+- 一个能解释职责边界的例子。
 
-> **抽象必须来自已经跑通的对象；不能用抽象掩盖没有跑通。**
+判断是否保留，不看它是不是“源码细节”，而看：
 
-> **没有真实机制证据，不宣称“理解完成”；没有真实工程证据，不宣称“Practice 完成”。**
+> **删掉以后，陌生读者是否只剩结论，却不知道为什么成立、为什么需要、前后怎么接起来。**
 
-最终目标不是拥有最多学习文件，而是：
+如果是，就不能删。
 
-> **把 HMBuddy 变成一条可以沿真实 Pi / Office 工程逐层学会 Agent 开发的路径。**
+---
+
+### C. Preserve Comprehensibility
+
+SenseWright 的要求不是“逻辑上能推出”就够。
+
+还要：
+
+> **陌生读者不需要自己补关键推理。**
+
+在技术长文中，可能需要：
+
+- 逐步引入概念；
+- 稳定使用关键术语；
+- 隔得很远时重新接回旧概念；
+- 从抽象机制切到具体项目时解释为什么现在切换；
+- 对关键机制补真实输入、状态和输出。
+
+这些属于 **Comprehensibility Repair Patterns**。
+
+它们不是固定章节，也不是每篇都必须机械执行。
+
+只在输出出现理解断层时启用。
+
+---
+
+## 6.2 不再维护四套独立写作 Gate
+
+V1.0 中的：
+
+```text
+Narrative Spine
+Progressive Disclosure
+Mechanism Depth
+Cognitive Continuity
+```
+
+不再作为 HMBuddy 自己的四个一级 Canonical Gate。
+
+它们被归并回 Deep Read 的核心合同：
+
+```text
+Narrative Spine
+→ Restore Cognitive Topology
+
+Mechanism Depth
+→ Preserve Cognitive Engines + Comprehensibility
+
+Progressive Disclosure
+→ Preserve Cognitive Progression + Comprehensibility
+
+Cognitive Continuity
+→ Comprehensibility in long-form material
+```
+
+以后只有当具体 Deep Read 输出出现相应失败时，才把它们作为 Repair Lens 使用。
+
+这样既保留这几轮验证有效的经验，又避免把一个 Quality Baseline 的局部写法变成全局模板。
+
+---
+
+## 6.3 D 的完成标准
+
+D 是否完成，回到 SenseWright V6.4 的 Acceptance Gate：
+
+- Structure：是否恢复了真实认知结构；
+- Fidelity：是否忠实于材料；
+- Comprehensibility：陌生读者能否跟上；
+- Source Boundary：是否越过原材料边界；
+- Coverage / Model Preservation：根据 Compression Contract 判断。
+
+HMBuddy 不再额外要求固定：
+
+- 章节数量；
+- Narrative 格式；
+- 每个机制九项字段；
+- Concept Ledger；
+- 固定结尾问题。
+
+如果这些技巧能提高当前材料的理解质量，就使用；否则不强制。
+
+---
+
+# 7. R — Review：独立检查是否站得住
+
+Review 直接继承 SenseWright V0.10：
+
+```text
+Atomize Source
+→ Reconcile Coverage
+→ Review Every Unit
+→ Assess Materiality
+→ Report Selectively
+```
+
+核心原则：
+
+> **Coverage before judgment.**
+
+> **Review comprehensively; report selectively.**
+
+对技术材料，常见 Review focus 可以包括：
+
+- ownership；
+- public / private contract；
+- current / future；
+- data / state / lifecycle；
+- failure mode；
+- security boundary；
+- compatibility；
+- architecture drift；
+- upstream duplication。
+
+但这些只是 Triggered Lens。
+
+不能预先拿一套固定 Checklist 去决定“哪些 source span 值得看”。
+
+---
+
+# 8. L — Learning：从 Source Understanding 到 Knowledge Model
+
+Learning 不是 Deep Read 的加长版。
+
+D 回答：
+
+> 原材料到底在说什么？
+
+L 回答：
+
+> 我现在真正理解这个对象了吗？
+
+通用主体仍然来自 SenseWright：
+
+```text
+Ground Object
+→ Build Model
+→ Find Gaps
+→ Project to Use
+```
+
+对于 Agent、Runtime、RAG、Database、Office Pipeline 等机制型技术知识，优先启用：
+
+```text
+Ground
+→ Run Once
+→ Explain Mechanism
+→ Vary One Condition
+→ Compress Model
+```
+
+---
+
+## 8.1 Ground before abstraction
+
+先回答：
+
+> 没有这个东西时真实怎么工作？  
+> 引入以后哪一步真的变了？
+
+如果用户反馈：
+
+- 太抽象；
+- 像生造的；
+- 不知道有什么用；
+- 不就是另一个 X；
+
+不要继续增加 taxonomy。
+
+回到真实对象和具体任务。
+
+---
+
+## 8.2 Run Once
+
+技术机制能跑就不要只描述。
+
+优先选择最小实例，让真正决定行为的：
+
+- 输入；
+- 中间表示；
+- 状态；
+- 数据流；
+- 控制流；
+- 资源；
+- 动作；
+- 输出；
+
+变得可观察。
+
+不要求每次全部展示。
+
+---
+
+## 8.3 Explain Mechanism
+
+跑完后继续问：
+
+> 为什么必须有这一步？  
+> 它解决上一步留下的什么问题？  
+> 跳过会怎样？
+
+Learning 的目标不是流程记忆，而是形成因果模型。
+
+---
+
+## 8.4 Boundary Variation
+
+当改变一个条件能带来明显认知增量时，只改变一个高信息量变量。
+
+观察：
+
+```text
+Still holds
+Weakens
+Disappears / reverses
+Becomes unanswerable
+Reframes the object
+```
+
+这不是固定 Checklist。
+
+只有当变化能帮助理解边界时才做。
+
+---
+
+## 8.5 L 的终点
+
+> **形成一个能运行、能解释、能预测相邻变化的 mental model。**
+
+已有 D / R 只能作为 Reference Context。
+
+涉及事实、源码行为或原文表述时，仍回真实 source。
+
+---
+
+# 9. P — Practice：把 Knowledge Model 编译成 Engineering Model
+
+Practice 直接继承 SenseWright V0.2：
+
+```text
+Knowledge Model
+→ Ground Real Scenario
+→ Build Engineering Model
+→ Implement End-to-End
+→ Run One Concrete Path
+→ Verify
+→ Troubleshoot
+→ Operationalize
+→ Generalize
+```
+
+中心问题：
+
+> **如果现在真的要把它做出来，我该怎么做？**
+
+---
+
+## 9.1 Prefer Real HMBuddy Scenario
+
+如果概念属于当前 HMBuddy VNext，应优先放进真实 VNext 场景。
+
+但这是 HMBuddy 项目选择，不是 Practice 的通用定义。
+
+如果用户真实任务不适合 HMBuddy 当前 VNext，就使用更合适的真实场景。
+
+---
+
+## 9.2 Engineering specificity follows the scenario
+
+Practice 根据真实场景决定是否需要：
+
+- 文件；
+- 模块；
+- schema；
+- interface；
+- fixture；
+- command；
+- test；
+- trace；
+- monitoring；
+- deployment；
+- rollback。
+
+不维护固定工程产物清单。
+
+原则仍然是：
+
+> **任何阻碍实际执行的关键空白，都不能用概念性语言跳过。**
+
+---
+
+## 9.3 One concrete path
+
+至少让一个真实输入走完整链路：
+
+```text
+Input
+→ Processing
+→ State Change
+→ Intermediate Artifact
+→ Output
+```
+
+然后回答：
+
+> 我怎么知道它真的做对了？
+
+建立真实 Feedback Loop。
+
+---
+
+## 9.4 Failure / Troubleshooting
+
+选择最有信息价值的失败点。
+
+不是为了考试，而是为了暴露 Engineering Model 的边界。
+
+---
+
+## 9.5 Generalize
+
+最后区分：
+
+**Concept / Upstream invariant**
+
+与：
+
+**Current project implementation choice**
+
+这样用户学到的是可迁移工程模型，不是当前 Repo 的一次性代码。
+
+---
+
+# 10. Quality Baseline 的角色
+
+`Pi AgentSession / Tool Calling Vertical Slice` 继续作为当前第一个 Quality Baseline。
+
+但它的角色被重新定义为：
+
+> **Regression Case，而不是 Protocol Generator。**
+
+它用于验证：
+
+- Deep Read 是否真的可理解；
+- Learning 是否形成可运行机制模型；
+- Practice 是否可实施；
+- D / R / L / P 边界是否正确。
+
+它不能反过来规定：
+
+> 所有未来主题都必须使用与 Pi AgentSession 完全相同的章节、术语、Gate 或写法。
+
+---
+
+## 10.1 新规则进入 Canonical Protocol 的条件
+
+从某个 Baseline / Case 中发现的规则，进入本协议前至少检查：
+
+### SenseWright Alignment
+
+它是否能映射到 SenseWright 已有核心原则？
+
+### Domain Neutrality
+
+把 `Pi / Tool / AgentSession / HMBuddy` 等专有名词拿掉以后，它是否仍成立？
+
+### Cross-Case Value
+
+换成 RAG、Database、Office Parsing、Workflow、业务制度等对象时，它是否仍能提高质量？
+
+### Contract Level
+
+它是在定义“认知任务必须做到什么”，还是只是在描述“这一篇文章最好怎么写”？
+
+只有前者才进入 Canonical Protocol。
+
+后者留在：
+
+- Quality Baseline；
+- Regression Note；
+- Skill Repair Pattern；
+- Case-specific guidance。
+
+---
+
+# 11. Completion / Status
+
+本协议不再发明一套平行于 SenseWright 的复杂状态机。
+
+每个阶段是否完成，优先由对应 Skill 自己的 Acceptance Gate 决定。
+
+HMBuddy 只保留几个跨阶段状态用于学习地图：
+
+```text
+DRAFT
+SOURCE-UNDERSTOOD
+KNOWLEDGE-MODELED
+ENGINEERING-TRANSFERRED
+QUALITY-BASELINE
+```
+
+含义：
+
+**DRAFT**  
+当前概念仍在处理中。
+
+**SOURCE-UNDERSTOOD**  
+D / R 已完成当前 source-facing 工作；不表示用户已经真正形成 Knowledge Model。
+
+**KNOWLEDGE-MODELED**  
+L 已形成可解释、可运行、可预测边界的 Knowledge Model。
+
+**ENGINEERING-TRANSFERRED**  
+P 已把 Knowledge Model 落进真实工程路径，并具有执行、验证、排错能力。
+
+**QUALITY-BASELINE**  
+该 Case 同时达到当前 D / R / L / P 的高质量要求，可用于回归检查。
+
+如果 Practice 只是写了方案但没有真实执行证据，不应提前标记 ENGINEERING-TRANSFERRED。
+
+---
+
+# 12. No Batch Completion
+
+不再使用：
+
+```text
+23 concepts × 4 files
+```
+
+作为学习进度指标。
+
+一个概念可以很复杂，也可以很简单。
+
+正确顺序是：
+
+```text
+选择一个真实概念
+→ 按需要运行 D / R / L / P
+→ 执行对应 Acceptance / Repair Loop
+→ 达到当前学习目标
+→ 再进入下一个概念
+```
+
+复杂概念耗费更多篇幅、更多实验、更多工程产物是正常的。
+
+---
+
+# 13. No Fixed Length / No Fixed Template
+
+这条规则同时来自 SenseWright Deep Read、Learning 与 Practice 的共同设计。
+
+本协议不规定：
+
+- 最低篇幅；
+- 最高篇幅；
+- 固定章节数；
+- 固定案例数；
+- 固定代码量；
+- 固定文件数量。
+
+判断标准不是：
+
+> “写得够不够长？”
+
+而是：
+
+> **当前认知任务是否已经完成？**
+
+简单对象可以很短。
+
+复杂对象可以自然展开。
+
+---
+
+# 14. HMBuddy Architecture Alignment
+
+当前 Canonical Architecture：
+
+> HMBuddy Architecture Baseline V1.0 — Pi-native Banking Office Agent
+
+因此学习时保持：
+
+```text
+Pi owns generic Agent runtime
+HMBuddy owns Office / Banking domain
+```
+
+旧 V0.2：
+
+```text
+SessionStore
+AgentLoop
+ToolRegistry
+ExtensionHost
+```
+
+等自研 Kernel 方向属于 Legacy。
+
+学习这些通用 Agent 概念时：
+
+> 去读 Pi 的真实实现。
+
+学习 Office Domain 时：
+
+> 去读 HMBuddy 当前代码、测试、Fixture 与真实办公案例。
+
+---
+
+# 15. 最终原则
+
+这份协议最终只保留五条长期稳定原则：
+
+1. **Use the right cognitive mode.**  
+   D / R / L / P 不互相替代。
+
+2. **Respect evidence boundaries.**  
+   Reference 不是 Evidence，Source / Derived / Project Choice 要分开。
+
+3. **Understand before compressing or abstracting.**  
+   先恢复真实对象与认知结构，再抽象。
+
+4. **Make mechanisms observable when understanding requires it.**  
+   技术知识不能只剩组件名和流程名。
+
+5. **Transfer understanding into execution only when the task reaches Practice.**  
+   不把 Deep Read 写成工程教程，也不把 Practice 退化成再次解释概念。
+
+Quality Baseline 用来检验这些原则，而不是不断产生新的顶层规则。
+
+> **Read what it says. Review whether it holds. Learn how it works. Practice how it gets built and run.**
